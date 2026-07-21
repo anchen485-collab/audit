@@ -17,6 +17,7 @@ def get_company_provider() -> CompanyInfoProvider:
         paths = ensure_storage_dirs()
         crawler = WebsiteCrawler(
             max_pages=int(os.getenv("WEBSITE_CRAWL_MAX_PAGES", "4")),
+            max_depth=int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "2")),
             timeout=int(os.getenv("WEBSITE_CRAWL_TIMEOUT", "8")),
         )
         cache_path = Path(os.getenv("WEBSITE_CACHE_PATH", paths["cache"] / "website_cache.json"))

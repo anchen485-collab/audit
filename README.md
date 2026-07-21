@@ -49,6 +49,7 @@ COMPANY_PROVIDER=mock
 ```text
 COMPANY_PROVIDER=website
 WEBSITE_CRAWL_MAX_PAGES=4
+WEBSITE_CRAWL_MAX_DEPTH=2
 WEBSITE_CRAWL_TIMEOUT=8
 WEBSITE_CRAWL_TARGET_MODULES=公司简介,经典案例,业务领域
 WEBSITE_CRAWL_CONCURRENCY=5
@@ -61,6 +62,15 @@ WEBSITE_CRAWL_CONCURRENCY=5
 经典案例
 业务领域
 ```
+
+如果目标内容藏在二级或三级栏目里，可以调大深度：
+
+```text
+WEBSITE_CRAWL_MAX_DEPTH=2
+```
+
+如果路径类似“首页 -> 解决方案 -> 农业方案 -> 业务领域”，需要设置为 `3`。
+建议第一版不要超过 `3`，否则批量审计会明显变慢。
 
 ## 启动服务
 
