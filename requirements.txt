@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+langgraph
+openpyxl
+pydantic
+python-multipart
+requests
+jinja2
+pytest
+httpx
