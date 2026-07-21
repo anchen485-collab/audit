@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from app.DataCleaning import WebsiteTextCleaner
 from app.company.cache import CompanyInfoCache
 from app.company.provider import CompanyInfoProvider
 from app.company.website_crawler import WebsiteCrawler
@@ -13,9 +14,15 @@ logger = logging.getLogger(__name__)
 class WebsiteCompanyInfoProvider(CompanyInfoProvider):
     """从企业官网定向抓取外部证据文本。"""
 
-    def __init__(self, crawler: WebsiteCrawler | None = None, cache_path: str | Path | None = None):
+    def __init__(
+        self,
+        crawler: WebsiteCrawler | None = None,
+        cache_path: str | Path | None = None,
+        text_cleaner: WebsiteTextCleaner | None = None,
+    ):
         self.crawler = crawler or WebsiteCrawler()
         self.cache = CompanyInfoCache(cache_path) if cache_path else None
+        self.text_cleaner = text_cleaner or WebsiteTextCleaner()
 
     def get_company_info(self, company_name: str) -> CompanyInfo:
         return CompanyInfo(
@@ -37,6 +44,8 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             cached = self.cache.get(record.website_url)
             if cached:
                 logger.info("website_provider_cache_hit 官网缓存命中 company=%s url=%s", record.company_raw, record.website_url)
+                cached = self._upgrade_cached_info(record, cached)
+                self.cache.set(record.website_url, cached)
                 return cached
 
         logger.info("website_provider_crawl_start 开始从官网获取企业信息 company=%s url=%s", record.company_raw, record.website_url)
@@ -61,16 +70,27 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             len(crawl_result.visited_urls),
             len(crawl_result.text or ""),
         )
+        cleaned = self.text_cleaner.clean(crawl_result.text)
+        logger.info(
+            "website_provider_text_cleaned 官网文本清洗完成 company=%s original_length=%s cleaned_length=%s kept_fragments=%s dropped_fragments=%s",
+            record.company_raw,
+            cleaned.original_length,
+            cleaned.cleaned_length,
+            cleaned.kept_fragment_count,
+            cleaned.dropped_fragment_count,
+        )
         info = CompanyInfo(
             query_name=record.company_name or record.company_raw,
             company_name=record.company_name or record.company_raw,
-            business_scope=crawl_result.text,
+            business_scope=cleaned.text,
             status="",
             source="website",
             success=True,
             raw={
                 "website_url": record.website_url,
                 "visited_urls": crawl_result.visited_urls,
+                "raw_crawl_text": crawl_result.text,
+                "cleaning": self._cleaning_payload(cleaned),
             },
         )
         if self.cache:
@@ -91,3 +111,39 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
                 "visited_urls": getattr(crawl_result, "visited_urls", []),
             },
         )
+
+    def _upgrade_cached_info(self, record: EmployeeRecord, info: CompanyInfo) -> CompanyInfo:
+        cleaning = info.raw.get("cleaning", {})
+        if cleaning.get("version") == self.text_cleaner.CLEANING_VERSION:
+            return info
+
+        source_text = info.raw.get("raw_crawl_text") or info.business_scope
+        cleaned = self.text_cleaner.clean(source_text)
+        logger.info(
+            "website_provider_cache_cleaned 官网旧缓存已重新清洗 company=%s original_length=%s cleaned_length=%s",
+            record.company_raw,
+            cleaned.original_length,
+            cleaned.cleaned_length,
+        )
+        raw = dict(info.raw)
+        raw.setdefault("raw_crawl_text", source_text)
+        raw["cleaning"] = self._cleaning_payload(cleaned)
+        return CompanyInfo(
+            query_name=info.query_name,
+            company_name=info.company_name,
+            business_scope=cleaned.text,
+            status=info.status,
+            source=info.source,
+            success=info.success,
+            error=info.error,
+            raw=raw,
+        )
+
+    def _cleaning_payload(self, cleaned) -> dict:
+        return {
+            "version": self.text_cleaner.CLEANING_VERSION,
+            "original_length": cleaned.original_length,
+            "cleaned_length": cleaned.cleaned_length,
+            "kept_fragment_count": cleaned.kept_fragment_count,
+            "dropped_fragment_count": cleaned.dropped_fragment_count,
+        }

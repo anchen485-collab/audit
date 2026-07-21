@@ -1,5 +1,16 @@
 from app.audit.rules import audit_record, clean_company_name
+from app.agent.classification_agent import AgentClassificationResult
 from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
+
+
+class FakeClassificationAgent:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def classify(self, record, company, rules):
+        self.calls.append((record, company, rules))
+        return self.result
 
 
 def test_clean_company_name_removes_url_and_extra_spaces():
@@ -81,4 +92,48 @@ def test_audit_record_suggests_better_category_when_scope_mismatches():
 
     assert result.status == "错误"
     assert "粮食作物" in result.suggestion
+    assert result.needs_review is False
+
+
+def test_audit_record_can_use_classification_agent_result():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="相阳",
+        category="种植业",
+        subcategory="水果作物",
+        company_raw="城市大米进出口有限公司",
+        stage="销售",
+    )
+    company = CompanyInfo(
+        query_name="城市大米进出口有限公司",
+        company_name="城市大米进出口有限公司",
+        business_scope="公司简介显示企业长期加工稻米，并出口大米到国际市场。",
+        status="",
+        source="website",
+        success=True,
+        raw={"website_url": "https://example.com"},
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "水果作物", "类型", ["水果"]),
+        CategoryRule("农业", "种植业", "谷类作物", "类型", ["水稻", "大米"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="农业",
+            matched_level2="种植业",
+            audit_result="错误",
+            confidence=92,
+            reason="外部证据显示主营稻米加工和出口。",
+            suggestion="农业 / 种植业",
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "错误"
+    assert result.error_type == "语义分类不匹配"
+    assert result.confidence == 92
+    assert result.suggestion == "农业 / 种植业"
     assert result.needs_review is False

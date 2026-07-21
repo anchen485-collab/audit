@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from app.agent import build_classification_agent_from_env
 from app.audit.rules import audit_record, clean_company_name
 from app.audit.summary import build_person_summary
 from app.company.provider import CompanyInfoProvider
@@ -62,9 +63,12 @@ def match_rules_node(state: AuditGraphState) -> AuditGraphState:
     infos = state["company_infos"]
     logger.info("audit_query_company_done 企业查询完成 company_count=%s", len(infos))
     results = []
+    classification_agent = build_classification_agent_from_env()
+    if classification_agent:
+        logger.info("classification_agent_enabled 大模型分类 Agent 已启用")
     for record in state["records"]:
         company_name = clean_company_name(record.company_raw)
-        results.append(audit_record(record, state["rules"], infos.get(company_name)))
+        results.append(audit_record(record, state["rules"], infos.get(company_name), classification_agent=classification_agent))
     return {"results": results, "steps": state.get("steps", []) + [f"完成审计 {len(results)} 条"]}
 
 

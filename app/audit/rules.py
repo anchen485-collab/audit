@@ -1,7 +1,11 @@
+import logging
 import re
 
 from app.audit.scoring import group_rules, score_rule_group
 from app.core.models import AuditResult, CategoryRule, CompanyInfo, EmployeeRecord
+
+
+logger = logging.getLogger(__name__)
 
 
 def clean_company_name(value: str) -> str:
@@ -39,8 +43,13 @@ def _missing_fields(record: EmployeeRecord) -> list[str]:
     return [name for name, value in fields.items() if not value]
 
 
-def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: CompanyInfo | None) -> AuditResult:
-    """审计单条记录：第一版只做规则匹配，不调用大模型。"""
+def audit_record(
+    record: EmployeeRecord,
+    rules: list[CategoryRule],
+    company: CompanyInfo | None,
+    classification_agent=None,
+) -> AuditResult:
+    """审计单条记录：默认规则匹配；配置后可用大模型 Agent 做语义判断。"""
     record.company_name = clean_company_name(record.company_raw)
     missing = _missing_fields(record)
     if missing:
@@ -96,6 +105,18 @@ def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: Com
         result.needs_review = True
         return result
 
+    if classification_agent:
+        try:
+            agent_result = classification_agent.classify(record, company, rules)
+            return _apply_agent_result(result, agent_result, grouped)
+        except Exception as exc:
+            logger.exception(
+                "classification_agent_failed 大模型分类 Agent 调用失败 row=%s company=%s error=%s",
+                record.row_number,
+                record.company_name,
+                exc,
+            )
+
     if current_key and current_score >= 80:
         result.status = "正确"
         result.confidence = current_score
@@ -116,5 +137,46 @@ def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: Com
     result.confidence = current_score
     result.error_type = "证据不足"
     result.reason = "外部证据与当前分类只有部分匹配，建议人工复核"
+    result.needs_review = True
+    return result
+
+
+def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[str, str, str], list[CategoryRule]]) -> AuditResult:
+    matched_level1 = agent_result.matched_level1
+    matched_level2 = agent_result.matched_level2
+    matched_text = " / ".join(part for part in [matched_level1, matched_level2] if part)
+    matched_key_exists = any(key[0] == matched_level1 and key[1] == matched_level2 for key in grouped)
+
+    result.confidence = agent_result.confidence
+    result.reason = f"大模型语义判断：{agent_result.reason}" if agent_result.reason else "大模型语义判断"
+    result.needs_review = agent_result.needs_review
+
+    if agent_result.audit_result == "正确":
+        result.status = "正确"
+        result.error_type = ""
+        result.suggestion = ""
+        return result
+
+    if agent_result.audit_result == "错误":
+        result.status = "错误"
+        result.error_type = "语义分类不匹配"
+        result.suggestion = agent_result.suggestion or matched_text
+        if matched_text and not matched_key_exists:
+            result.status = "疑似错误"
+            result.error_type = "语义分类需复核"
+            result.reason += "；模型返回的建议分类未在内部分类表中精确命中，需要人工复核"
+            result.needs_review = True
+        return result
+
+    if agent_result.audit_result == "无法判断":
+        result.status = "无法判断"
+        result.error_type = "语义无法判断"
+        result.suggestion = agent_result.suggestion or matched_text
+        result.needs_review = True
+        return result
+
+    result.status = "疑似错误"
+    result.error_type = "语义证据不足"
+    result.suggestion = agent_result.suggestion or matched_text
     result.needs_review = True
     return result
