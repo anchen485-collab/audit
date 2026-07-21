@@ -83,6 +83,8 @@ def test_classification_agent_prompt_only_requires_level1_and_level2():
 
     assert result.audit_result == "正确"
     assert "只判断一级品类和二级品类" in user_prompt
+    assert "环节不作为判断正确或错误的标准" in user_prompt
+    assert "当前环节" not in user_prompt
     assert '"matched_level1"' in user_prompt
     assert '"matched_level2"' in user_prompt
     assert '"matched_level3"' not in user_prompt

@@ -144,13 +144,28 @@ def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[s
     matched_level1 = agent_result.matched_level1
     matched_level2 = agent_result.matched_level2
     matched_text = " / ".join(part for part in [matched_level1, matched_level2] if part)
-    matched_key_exists = any(key[0] == matched_level1 and key[1] == matched_level2 for key in grouped)
+    matched_key_exists = _level_pair_exists(grouped, matched_level1, matched_level2)
+    current_key_exists = _level_pair_exists(grouped, result.original_category, result.original_subcategory)
 
     result.confidence = agent_result.confidence
     result.reason = f"大模型语义判断：{agent_result.reason}" if agent_result.reason else "大模型语义判断"
     result.needs_review = agent_result.needs_review
 
     if agent_result.audit_result == "正确":
+        if not current_key_exists:
+            result.status = "错误"
+            result.error_type = "内部分类不存在"
+            result.suggestion = _level1_level2_suggestion(agent_result.suggestion, matched_text)
+            result.reason += "；员工录入的一级/二级组合未在内部分类表中精确存在，不能判为正确"
+            result.needs_review = True
+            return result
+        if matched_text and not matched_key_exists:
+            result.status = "疑似错误"
+            result.error_type = "语义分类需复核"
+            result.suggestion = _level1_level2_suggestion(agent_result.suggestion, matched_text)
+            result.reason += "；模型返回的一级/二级组合未在内部分类表中精确存在，不能判为正确"
+            result.needs_review = True
+            return result
         result.status = "正确"
         result.error_type = ""
         result.suggestion = ""
@@ -159,7 +174,7 @@ def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[s
     if agent_result.audit_result == "错误":
         result.status = "错误"
         result.error_type = "语义分类不匹配"
-        result.suggestion = agent_result.suggestion or matched_text
+        result.suggestion = _level1_level2_suggestion(agent_result.suggestion, matched_text)
         if matched_text and not matched_key_exists:
             result.status = "疑似错误"
             result.error_type = "语义分类需复核"
@@ -170,12 +185,53 @@ def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[s
     if agent_result.audit_result == "无法判断":
         result.status = "无法判断"
         result.error_type = "语义无法判断"
-        result.suggestion = agent_result.suggestion or matched_text
+        result.suggestion = _level1_level2_suggestion(agent_result.suggestion, matched_text)
         result.needs_review = True
         return result
 
     result.status = "疑似错误"
     result.error_type = "语义证据不足"
-    result.suggestion = agent_result.suggestion or matched_text
+    result.suggestion = _level1_level2_suggestion(agent_result.suggestion, matched_text)
     result.needs_review = True
     return result
+
+
+def _level_pair_exists(grouped: dict[tuple[str, str, str], list[CategoryRule]], level1: str, level2: str) -> bool:
+    return any(key[0] == level1 and key[1] == level2 for key in grouped)
+
+
+def _level1_level2_suggestion(suggestion: str, fallback: str = "") -> str:
+    value = (suggestion or fallback or "").strip()
+    if not value:
+        return ""
+
+    fallback_parts = _split_suggestion_parts(fallback)
+    labeled_level1 = _extract_labeled_suggestion(value, "一级")
+    labeled_level2 = _extract_labeled_suggestion(value, "二级")
+    if labeled_level1 or labeled_level2:
+        level1 = labeled_level1 or (fallback_parts[0] if fallback_parts else "")
+        level2 = labeled_level2 or (fallback_parts[1] if len(fallback_parts) > 1 else "")
+        return " / ".join(part for part in [level1, level2] if part)
+
+    normalized = value.replace("／", "/").replace("\\", "/")
+    normalized = re.sub(r"(?:[/，,；;（(]\s*)?(?:三级|三级分类|三级品类)\s*[:：=].*$", "", normalized)
+    normalized = re.sub(r"\s*/\s*", " / ", normalized)
+    normalized = re.sub(r"(?:一级|一级分类|一级品类)\s*[:：=]\s*", "", normalized)
+    normalized = re.sub(r"(?:二级|二级分类|二级品类)\s*[:：=]\s*", "", normalized)
+    parts = _split_suggestion_parts(normalized)
+    if len(parts) >= 2:
+        return " / ".join(parts[:2])
+    return " / ".join(parts) if parts else normalized.strip()
+
+
+def _extract_labeled_suggestion(value: str, label: str) -> str:
+    pattern = rf"{label}(?:分类|品类)?\s*[:：=]\s*([^/，,；;）)\n]+)"
+    match = re.search(pattern, value)
+    if not match:
+        return ""
+    return match.group(1).strip(" '\"“”‘’")
+
+
+def _split_suggestion_parts(value: str) -> list[str]:
+    normalized = (value or "").replace("／", "/").replace("\\", "/")
+    return [part.strip(" '\"“”‘’") for part in normalized.split("/") if part.strip(" '\"“”‘’")]

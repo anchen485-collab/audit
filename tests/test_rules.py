@@ -1,4 +1,4 @@
-from app.audit.rules import audit_record, clean_company_name
+from app.audit.rules import _level1_level2_suggestion, audit_record, clean_company_name
 from app.agent.classification_agent import AgentClassificationResult
 from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
 
@@ -167,3 +167,102 @@ def test_audit_record_can_use_classification_agent_result():
     assert result.confidence == 92
     assert result.suggestion == "农业 / 种植业"
     assert result.needs_review is False
+
+
+def test_audit_record_trims_agent_suggestion_to_level1_and_level2():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="相阳",
+        category="种植业",
+        subcategory="水果作物",
+        company_raw="城市大米进出口有限公司",
+        stage="销售",
+    )
+    company = CompanyInfo(
+        query_name="城市大米进出口有限公司",
+        company_name="城市大米进出口有限公司",
+        business_scope="公司简介显示企业长期加工稻米，并出口大米到国际市场。",
+        status="",
+        source="website",
+        success=True,
+        raw={"website_url": "https://example.com"},
+    )
+    rules = [
+        CategoryRule("种植业", "水果作物", "热带水果类", "类型", ["水果"]),
+        CategoryRule("种植业", "粮食作物", "谷物类", "类型", ["水稻", "大米"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="种植业",
+            matched_level2="粮食作物",
+            audit_result="错误",
+            confidence=90,
+            reason="外部证据显示主营稻米加工和出口。",
+            suggestion="一级：种植业 / 二级：粮食作物 / 三级：谷物类",
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.suggestion == "种植业 / 粮食作物"
+    assert "谷物类" not in result.suggestion
+
+
+def test_level1_level2_suggestion_extracts_labeled_second_level_without_third_level():
+    assert (
+        _level1_level2_suggestion("建议将细分改为“鸡”（二级=家禽，三级=鸡）", "养殖业 / 家禽")
+        == "养殖业 / 家禽"
+    )
+    assert (
+        _level1_level2_suggestion("二级品类：专用设备厂 / 三级品类：农林牧渔机械", "机械设备厂 / 专用设备厂")
+        == "机械设备厂 / 专用设备厂"
+    )
+    assert (
+        _level1_level2_suggestion("粮食作物 / 农副食品加工 / 粮食加工")
+        == "粮食作物 / 农副食品加工"
+    )
+
+
+def test_agent_cannot_mark_nonexistent_level_pair_as_correct():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="相阳",
+        category="畜牧业",
+        subcategory="家畜养殖",
+        company_raw="测试牧业有限公司",
+        stage="育种",
+    )
+    company = CompanyInfo(
+        query_name="测试牧业有限公司",
+        company_name="测试牧业有限公司",
+        business_scope="企业主营家禽、家畜养殖和销售。",
+        status="",
+        source="website",
+        success=True,
+        raw={"website_url": "https://example.com"},
+    )
+    rules = [
+        CategoryRule("畜牧业", "畜牧", "家畜", "类型", ["家畜", "牛", "羊"]),
+        CategoryRule("畜牧业", "家禽", "鸡", "类型", ["鸡", "鸭"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="畜牧业",
+            matched_level2="家畜养殖",
+            audit_result="正确",
+            confidence=95,
+            reason="外部证据提到家畜养殖。",
+            suggestion="",
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "错误"
+    assert result.error_type == "内部分类不存在"
+    assert result.needs_review is True
+    assert "不能判为正确" in result.reason

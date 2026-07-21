@@ -87,6 +87,7 @@ class ClassificationAgent:
                 "content": (
                     "你是企业分类审计 Agent。你只能根据用户提供的内部分类表和外部证据文本判断，"
                     "只判断一级品类和二级品类是否正确，不需要判断三级品类。"
+                    "不要把员工录入的环节作为判断正确或错误的标准。"
                     "必须从内部分类表已有一级、二级类目中选择，不允许编造新分类。"
                     "如果证据不足以确定，请返回 audit_result=疑似错误 或 无法判断，并说明原因。"
                     "只输出 JSON，不要输出 Markdown。"
@@ -173,6 +174,7 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
     return f"""
 请基于“内部分类表”和“外部证据文本”判断员工录入分类是否正确。
 只判断一级品类和二级品类，不要判断三级品类；三级品类和模块关键词只作为理解二级品类边界的参考。
+员工录入的环节不作为判断正确或错误的标准，不要因为环节不一致判错。
 
 员工录入：
 - 企业名称：{record.company_name or record.company_raw}
