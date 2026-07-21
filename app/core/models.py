@@ -14,7 +14,7 @@ class EmployeeRecord:
     category: str
     subcategory: str
     company_raw: str
-    stage: str
+    stage: str = ""
     company_name: str = ""
     website_url: str = ""
 

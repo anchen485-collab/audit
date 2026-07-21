@@ -21,7 +21,6 @@ def score_rule_group(
     category: str,
     subcategory: str,
     business_scope: str,
-    stage: str,
 ) -> tuple[int, list[str]]:
     """计算某个分类组合与当前记录的匹配分。"""
     if not rules:
@@ -39,18 +38,13 @@ def score_rule_group(
 
     all_keywords = []
     for rule in rules:
+        if rule.module_name == "环节":
+            continue
         all_keywords.extend(rule.keywords)
-        if rule.module_name and rule.module_name in stage:
-            score += 5
-            evidence.append(f"环节模块命中：{rule.module_name}")
 
     scope_hits = contains_any(business_scope, list(dict.fromkeys(all_keywords)))
-    stage_hits = contains_any(stage, list(dict.fromkeys(all_keywords)))
-    score += min(len(scope_hits) * 12, 45)
-    score += min(len(stage_hits) * 6, 20)
+    score += min(len(scope_hits) * 14, 50)
     if scope_hits:
         evidence.append(f"经营范围关键词：{'、'.join(scope_hits[:6])}")
-    if stage_hits:
-        evidence.append(f"录入环节关键词：{'、'.join(stage_hits[:6])}")
 
     return min(score, 100), evidence

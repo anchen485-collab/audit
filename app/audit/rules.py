@@ -38,7 +38,6 @@ def _missing_fields(record: EmployeeRecord) -> list[str]:
         "一级分类": record.category,
         "细分": record.subcategory,
         "企业名称&官网": record.company_raw,
-        "环节": record.stage,
     }
     return [name for name, value in fields.items() if not value]
 
@@ -79,13 +78,13 @@ def audit_record(
     best_evidence: list[str] = []
 
     for key, group in grouped.items():
-        score, evidence = score_rule_group(group, record.category, record.subcategory, business_scope, record.stage)
+        score, evidence = score_rule_group(group, record.category, record.subcategory, business_scope)
         if key[1] == record.category and key[2] == record.subcategory:
             current_key = key
             current_score = score
             current_evidence = evidence
         # 推荐分类只看外部证据文本，避免员工填错内容反向污染推荐结果。
-        recommendation_score, recommendation_evidence = score_rule_group(group, "", "", business_scope, "")
+        recommendation_score, recommendation_evidence = score_rule_group(group, "", "", business_scope)
         if recommendation_score > best_score:
             best_key = key
             best_score = recommendation_score

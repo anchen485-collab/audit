@@ -5,7 +5,7 @@ from openpyxl import load_workbook
 from app.core.models import EmployeeRecord
 
 
-REQUIRED_HEADERS = ["日期", "姓名", "一级分类", "细分", "企业名称&官网", "环节"]
+REQUIRED_HEADERS = ["日期", "姓名", "一级分类", "细分", "企业名称&官网"]
 
 
 def cell_text(value) -> str:
@@ -43,7 +43,6 @@ def read_employee_excel(path: str | Path) -> list[EmployeeRecord]:
                 category=values[header_index["一级分类"]],
                 subcategory=values[header_index["细分"]],
                 company_raw=values[header_index["企业名称&官网"]],
-                stage=values[header_index["环节"]],
                 website_url=website_url,
             )
         )

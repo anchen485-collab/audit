@@ -65,6 +65,36 @@ def test_audit_record_marks_matching_scope_as_correct():
     assert result.needs_review is False
 
 
+def test_audit_record_ignores_stage_when_scoring_category():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="张冰冰",
+        category="种植业",
+        subcategory="水果作物",
+        company_raw="金川县雪梨果业开发有限责任公司",
+        stage="完全不匹配的环节",
+    )
+    company = CompanyInfo(
+        query_name="金川县雪梨果业开发有限责任公司",
+        company_name="金川县雪梨果业开发有限责任公司",
+        business_scope="梨、苹果、水果种植、农业技术服务。",
+        status="存续",
+        source="mock",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "水果作物", "类型", ["苹果", "梨", "水果"]),
+        CategoryRule("农业", "种植业", "水果作物", "环节", ["繁育", "加工", "销售"]),
+    ]
+
+    result = audit_record(record, rules, company)
+
+    assert result.status == "正确"
+    assert result.confidence >= 80
+    assert "环节" not in result.reason
+
+
 def test_audit_record_suggests_better_category_when_scope_mismatches():
     record = EmployeeRecord(
         row_number=2,

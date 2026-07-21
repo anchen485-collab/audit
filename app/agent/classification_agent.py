@@ -133,8 +133,12 @@ def format_category_rules_for_agent(rules: list[CategoryRule], max_chars: int = 
     for index, ((level1, level2, level3), group) in enumerate(grouped.items(), start=1):
         modules = []
         for rule in group:
+            if rule.module_name == "环节":
+                continue
             keywords = "、".join(rule.keywords[:80])
             modules.append(f"{rule.module_name}: {keywords}" if keywords else rule.module_name)
+        if not modules:
+            continue
         line = f"{index}. 一级={level1}; 二级={level2}; 三级={level3}; 模块={' | '.join(modules)}"
         lines.append(line)
 
@@ -174,7 +178,6 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
 - 企业名称：{record.company_name or record.company_raw}
 - 当前一级分类：{record.category}
 - 当前二级分类：{record.subcategory}
-- 当前环节：{record.stage}
 
 企查查/官网企业名称：{company.company_name}
 数据来源：{company.source}

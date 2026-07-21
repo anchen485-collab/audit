@@ -41,3 +41,17 @@ def test_read_employee_excel_reads_company_website_hyperlink(tmp_path):
     records = read_employee_excel(file_path)
 
     assert records[0].website_url == "https://www.example-agri.com"
+
+
+def test_read_employee_excel_allows_missing_stage_header(tmp_path):
+    file_path = tmp_path / "employee_without_stage.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["日期", "姓名", "一级分类", "细分", "企业名称&官网"])
+    ws.append(["7月21日", "张冰冰", "种植业", "水果作物", "金川县雪梨果业开发有限责任公司"])
+    wb.save(file_path)
+
+    records = read_employee_excel(file_path)
+
+    assert len(records) == 1
+    assert records[0].stage == ""

@@ -31,7 +31,9 @@ def test_format_category_rules_for_agent_groups_rules():
     assert "二级=种植业" in text
     assert "三级=谷类作物" in text
     assert "类型: 水稻、大米" in text
-    assert "环节: 加工、销售" in text
+    assert "环节" not in text
+    assert "加工" not in text
+    assert "销售" not in text
 
 
 def test_parse_agent_result_normalizes_output():
@@ -84,3 +86,45 @@ def test_classification_agent_prompt_only_requires_level1_and_level2():
     assert '"matched_level1"' in user_prompt
     assert '"matched_level2"' in user_prompt
     assert '"matched_level3"' not in user_prompt
+
+
+def test_format_category_rules_for_agent_filters_stage_module():
+    rules = [
+        CategoryRule("农业", "种植业", "谷类作物", "类型", ["水稻", "大米"]),
+        CategoryRule("农业", "种植业", "谷类作物", "环节", ["加工", "销售"]),
+    ]
+
+    text = format_category_rules_for_agent(rules)
+
+    assert "类型: 水稻、大米" in text
+    assert "环节" not in text
+    assert "加工" not in text
+    assert "销售" not in text
+
+
+def test_classification_agent_prompt_does_not_include_stage():
+    client = CaptureChatClient()
+    agent = ClassificationAgent(client)
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="相阳",
+        category="农业",
+        subcategory="种植业",
+        company_raw="测试企业",
+        stage="销售",
+    )
+    company = CompanyInfo(
+        query_name="测试企业",
+        company_name="测试企业",
+        business_scope="公司简介显示主营水稻种植。",
+        status="",
+        source="website",
+        success=True,
+    )
+
+    agent.classify(record, company, [CategoryRule("农业", "种植业", "谷类作物", "类型", ["水稻"])])
+    user_prompt = client.messages[1]["content"]
+
+    assert "当前环节" not in user_prompt
+    assert "销售" not in user_prompt
