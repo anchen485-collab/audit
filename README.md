@@ -48,6 +48,7 @@ COMPANY_PROVIDER=mock
 
 ```text
 COMPANY_PROVIDER=website
+AUDIT_LOG_LEVEL=INFO
 WEBSITE_CRAWL_MAX_PAGES=4
 WEBSITE_CRAWL_MAX_DEPTH=2
 WEBSITE_CRAWL_TIMEOUT=8
@@ -71,6 +72,12 @@ WEBSITE_CRAWL_MAX_DEPTH=2
 
 如果路径类似“首页 -> 解决方案 -> 农业方案 -> 业务领域”，需要设置为 `3`。
 建议第一版不要超过 `3`，否则批量审计会明显变慢。
+
+控制台日志默认使用 `INFO` 级别，会输出上传、读表、企业查询、官网爬取、规则匹配和导出等关键事件。排查问题时可以临时设置：
+
+```text
+AUDIT_LOG_LEVEL=INFO
+```
 
 ## 启动服务
 

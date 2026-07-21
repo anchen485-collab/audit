@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
@@ -14,6 +15,9 @@ from app.audit.nodes import (
 from app.company.mock_provider import MockCompanyInfoProvider
 from app.company.provider import CompanyInfoProvider
 from app.core.models import AuditGraphState
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_audit_graph():
@@ -54,4 +58,18 @@ def run_audit_workflow(
         "errors": [],
         "steps": [],
     }
-    return graph.invoke(initial_state)
+    logger.info(
+        "audit_workflow_start 审计流程开始 job_id=%s employee_file=%s category_file=%s provider=%s",
+        initial_state["job_id"],
+        initial_state["employee_file"],
+        initial_state["category_file"],
+        initial_state["provider"].__class__.__name__,
+    )
+    final_state = graph.invoke(initial_state)
+    logger.info(
+        "audit_workflow_done 审计流程完成 job_id=%s output_path=%s result_count=%s",
+        final_state.get("job_id"),
+        final_state.get("output_path"),
+        len(final_state.get("results", [])),
+    )
+    return final_state

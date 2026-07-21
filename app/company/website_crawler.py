@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
+import logging
 import re
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 import requests
+
+
+logger = logging.getLogger(__name__)
 
 
 TARGET_MODULES = {
@@ -90,8 +94,16 @@ class WebsiteCrawler:
         """从官网首页开始，有限深度发现并抓取目标模块页面。"""
         normalized_url = self._normalize_start_url(url)
         if not normalized_url:
+            logger.warning("website_crawl_invalid_url 官网链接格式异常 url=%s", url)
             return WebsiteCrawlResult(success=False, url=url, error="官网链接格式异常")
 
+        logger.info(
+            "website_crawl_start 官网爬取开始 url=%s max_pages=%s max_depth=%s timeout=%s",
+            normalized_url,
+            self.max_pages,
+            self.max_depth,
+            self.timeout,
+        )
         base_domain = urlparse(normalized_url).netloc
         queue: deque[LinkCandidate] = deque([LinkCandidate(normalized_url, 0, True, 0)])
         queued = {normalized_url}
@@ -107,11 +119,19 @@ class WebsiteCrawler:
                 html = self._fetch(current.url)
             except Exception as exc:
                 if not visited:
+                    logger.warning("website_crawl_failed 官网首页无法访问 url=%s error=%s", normalized_url, exc)
                     return WebsiteCrawlResult(success=False, url=normalized_url, error=f"官网无法访问：{exc}")
+                logger.warning("website_crawl_page_failed 官网页面访问失败 url=%s depth=%s error=%s", current.url, current.depth, exc)
                 continue
 
             fetched_html[current.url] = html
             visited.append(current.url)
+            logger.info(
+                "website_crawl_page_success 官网页面访问成功 url=%s depth=%s is_target=%s",
+                current.url,
+                current.depth,
+                current.is_target,
+            )
             if current.is_target:
                 evidence_texts.append(self.extract_text(html))
 
@@ -119,6 +139,12 @@ class WebsiteCrawler:
                 continue
 
             candidates = self.extract_candidate_links(current.url, html, base_domain, current.depth + 1)
+            logger.info(
+                "website_crawl_candidates_found 官网候选链接发现 url=%s depth=%s candidate_count=%s",
+                current.url,
+                current.depth,
+                len(candidates),
+            )
             for candidate in candidates:
                 if candidate.url in queued or candidate.url in fetched_html:
                     continue
@@ -128,7 +154,19 @@ class WebsiteCrawler:
 
         text = self._compact_text(" ".join(evidence_texts))[: self.max_text_length]
         if len(text) < self.min_text_length:
+            logger.warning(
+                "website_crawl_insufficient_evidence 官网证据不足 url=%s visited_count=%s text_length=%s",
+                normalized_url,
+                len(visited),
+                len(text),
+            )
             return WebsiteCrawlResult(success=False, url=normalized_url, text=text, visited_urls=visited, error="官网证据不足")
+        logger.info(
+            "website_crawl_success 官网爬取成功 url=%s visited_count=%s text_length=%s",
+            normalized_url,
+            len(visited),
+            len(text),
+        )
         return WebsiteCrawlResult(success=True, url=normalized_url, text=text, visited_urls=visited)
 
     def extract_target_links(self, base_url: str, html: str) -> list[str]:
