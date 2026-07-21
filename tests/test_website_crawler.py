@@ -57,3 +57,30 @@ def test_website_crawler_reports_insufficient_text():
 
     assert result.success is False
     assert result.error == "官网证据不足"
+
+
+class FakeEncodedResponse:
+    def __init__(self, content, encoding, apparent_encoding):
+        self.content = content
+        self.encoding = encoding
+        self.apparent_encoding = apparent_encoding
+        self.status_code = 200
+
+    @property
+    def text(self):
+        return self.content.decode(self.encoding, errors="replace")
+
+
+def test_website_crawler_decodes_utf8_page_when_header_encoding_is_wrong():
+    html = "<html><body><p>黑龙江德玉种业有限公司主营玉米等农作物制种。</p></body></html>"
+    response = FakeEncodedResponse(
+        content=html.encode("utf-8"),
+        encoding="ISO-8859-1",
+        apparent_encoding="utf-8",
+    )
+    crawler = WebsiteCrawler(http_get=lambda url, timeout, headers: response)
+
+    fetched_html = crawler._fetch("https://demo.com")
+
+    assert "黑龙江德玉种业有限公司" in fetched_html
+    assert "é»" not in fetched_html
