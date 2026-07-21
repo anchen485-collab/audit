@@ -23,6 +23,7 @@ def _base_result(record: EmployeeRecord, status: str, confidence: int) -> AuditR
         cleaned_company=cleaned_name,
         status=status,
         confidence=confidence,
+        website_url=record.website_url,
     )
 
 
@@ -51,6 +52,9 @@ def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: Com
 
     if company is None or not company.success:
         result = _base_result(record, "无法判断", 0)
+        result.data_source = company.source if company else ""
+        result.website_url = (company.raw.get("website_url") if company else "") or record.website_url
+        result.business_scope = company.business_scope if company else ""
         result.error_type = "企业信息缺失"
         result.reason = company.error if company else "未查询到企业信息"
         result.needs_review = True
@@ -71,7 +75,7 @@ def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: Com
             current_key = key
             current_score = score
             current_evidence = evidence
-        # 推荐分类只看经营范围证据，避免员工填错内容反向污染推荐结果。
+        # 推荐分类只看外部证据文本，避免员工填错内容反向污染推荐结果。
         recommendation_score, recommendation_evidence = score_rule_group(group, "", "", business_scope, "")
         if recommendation_score > best_score:
             best_key = key
@@ -82,18 +86,20 @@ def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: Com
     result.company_name = company.company_name
     result.company_status = company.status
     result.business_scope = business_scope
+    result.data_source = company.source
+    result.website_url = company.raw.get("website_url", record.website_url)
 
     if not business_scope:
         result.status = "无法判断"
-        result.error_type = "经营范围缺失"
-        result.reason = "企业经营范围为空，无法进行分类匹配"
+        result.error_type = "外部证据缺失"
+        result.reason = "外部证据文本为空，无法进行分类匹配"
         result.needs_review = True
         return result
 
     if current_key and current_score >= 80:
         result.status = "正确"
         result.confidence = current_score
-        result.reason = "；".join(current_evidence) or "分类和经营范围匹配"
+        result.reason = "；".join(current_evidence) or "分类和外部证据匹配"
         result.needs_review = False
         return result
 
@@ -102,13 +108,13 @@ def audit_record(record: EmployeeRecord, rules: list[CategoryRule], company: Com
         result.confidence = max(best_score, 60)
         result.error_type = "细分错误"
         result.suggestion = f"{best_key[1]} / {best_key[2]}"
-        result.reason = "经营范围更匹配建议分类：" + "；".join(best_evidence)
+        result.reason = "外部证据更匹配建议分类：" + "；".join(best_evidence)
         result.needs_review = False
         return result
 
     result.status = "疑似错误"
     result.confidence = current_score
     result.error_type = "证据不足"
-    result.reason = "经营范围与当前分类只有部分匹配，建议人工复核"
+    result.reason = "外部证据与当前分类只有部分匹配，建议人工复核"
     result.needs_review = True
     return result

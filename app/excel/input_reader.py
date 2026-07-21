@@ -26,10 +26,15 @@ def read_employee_excel(path: str | Path) -> list[EmployeeRecord]:
         raise ValueError(f"员工录入表缺少表头：{', '.join(missing_headers)}")
 
     records: list[EmployeeRecord] = []
-    for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        values = [cell_text(value) for value in row]
+    company_col = header_index["企业名称&官网"]
+    for row_number, row in enumerate(ws.iter_rows(min_row=2), start=2):
+        values = [cell_text(cell.value) for cell in row]
         if not any(values):
             continue
+        company_cell = row[company_col]
+        website_url = ""
+        if company_cell.hyperlink and company_cell.hyperlink.target:
+            website_url = str(company_cell.hyperlink.target).strip()
         records.append(
             EmployeeRecord(
                 row_number=row_number,
@@ -39,6 +44,7 @@ def read_employee_excel(path: str | Path) -> list[EmployeeRecord]:
                 subcategory=values[header_index["细分"]],
                 company_raw=values[header_index["企业名称&官网"]],
                 stage=values[header_index["环节"]],
+                website_url=website_url,
             )
         )
     return records

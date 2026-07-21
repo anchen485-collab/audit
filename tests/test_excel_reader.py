@@ -27,3 +27,17 @@ def test_read_employee_excel_keeps_rows_and_skips_empty_rows(tmp_path):
     assert records[0].company_raw.startswith("金川县雪梨果业")
     assert records[1].row_number == 4
     assert records[1].subcategory == ""
+
+
+def test_read_employee_excel_reads_company_website_hyperlink(tmp_path):
+    file_path = tmp_path / "employee_with_link.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["日期", "姓名", "一级分类", "细分", "企业名称&官网", "环节"])
+    ws.append(["7月21日", "张冰冰", "种植业", "蔬菜作物", "陕西汇生源生态农业有限公司", "加工、销售"])
+    ws["E2"].hyperlink = "https://www.example-agri.com"
+    wb.save(file_path)
+
+    records = read_employee_excel(file_path)
+
+    assert records[0].website_url == "https://www.example-agri.com"

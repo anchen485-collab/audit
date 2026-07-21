@@ -9,6 +9,7 @@
 - 使用 LangGraph 编排审计流程。
 - 使用规则匹配判断录入是否正确。
 - 使用 mock 企业经营范围模拟企查查 API。
+- 支持 `website` 模式，从企业官网定向爬取“公司简介、经典案例、业务领域”作为外部证据文本。
 - 导出审计结果 Excel，包含“审计明细”和“人员汇总”两个 Sheet。
 
 ## 第一版边界
@@ -41,6 +42,24 @@ QICHACHA_TIMEOUT=15
 
 ```text
 COMPANY_PROVIDER=mock
+```
+
+如果暂停企查查 API，改用官网爬取模式：
+
+```text
+COMPANY_PROVIDER=website
+WEBSITE_CRAWL_MAX_PAGES=4
+WEBSITE_CRAWL_TIMEOUT=8
+WEBSITE_CRAWL_TARGET_MODULES=公司简介,经典案例,业务领域
+WEBSITE_CRAWL_CONCURRENCY=5
+```
+
+官网模式要求员工录入 Excel 的“企业名称&官网”单元格里存在真实超链接。系统只会读取公开官网页面，并优先抓取：
+
+```text
+公司简介
+经典案例
+业务领域
 ```
 
 ## 启动服务

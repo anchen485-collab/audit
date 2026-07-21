@@ -16,6 +16,7 @@ class EmployeeRecord:
     company_raw: str
     stage: str
     company_name: str = ""
+    website_url: str = ""
 
 
 @dataclass
@@ -59,6 +60,8 @@ class AuditResult:
     company_name: str = ""
     company_status: str = ""
     business_scope: str = ""
+    data_source: str = ""
+    website_url: str = ""
     error_type: str = ""
     reason: str = ""
     suggestion: str = ""

@@ -8,3 +8,4 @@ requests
 jinja2
 pytest
 httpx
+beautifulsoup4

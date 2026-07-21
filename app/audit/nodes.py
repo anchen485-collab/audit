@@ -25,7 +25,8 @@ def query_company_node(state: AuditGraphState) -> AuditGraphState:
     for record in state["records"]:
         company_name = clean_company_name(record.company_raw)
         if company_name not in infos:
-            infos[company_name] = provider.get_company_info(company_name)
+            record.company_name = company_name
+            infos[company_name] = provider.get_company_info_for_record(record)
     return {"company_infos": infos, "steps": state.get("steps", []) + [f"查询企业 {len(infos)} 家"]}
 
 

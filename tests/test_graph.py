@@ -46,3 +46,7 @@ def test_run_audit_workflow_exports_result_excel(tmp_path):
     wb = load_workbook(state["output_path"], data_only=True)
     assert "审计明细" in wb.sheetnames
     assert "人员汇总" in wb.sheetnames
+    headers = [cell.value for cell in wb["审计明细"][1]]
+    assert "数据来源" in headers
+    assert "官网链接" in headers
+    assert "外部证据文本" in headers
