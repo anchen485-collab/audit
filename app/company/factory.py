@@ -25,7 +25,7 @@ def get_company_provider() -> CompanyInfoProvider:
             max_depth=int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "2")),
             timeout=int(os.getenv("WEBSITE_CRAWL_TIMEOUT", "8")),
         )
-        cache_path = Path(os.getenv("WEBSITE_CACHE_PATH", paths["cache"] / "website_cache.json"))
+        cache_path = Path(os.getenv("WEBSITE_CACHE_PATH") or paths["cache"] / "website_cache.json")
         logger.info(
             "company_provider_website_ready 官网信息源已就绪 max_pages=%s max_depth=%s timeout=%s cache_path=%s",
             crawler.max_pages,

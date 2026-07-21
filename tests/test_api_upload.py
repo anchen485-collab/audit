@@ -42,3 +42,30 @@ def test_upload_two_excels_returns_download_link(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert "/audit/download/" in response.text
+
+
+def test_upload_with_invalid_employee_headers_returns_error_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUDIT_STORAGE_DIR", str(tmp_path / "storage"))
+    employee_file = tmp_path / "employee.xlsx"
+    category_file = tmp_path / "category.xlsx"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["错误表头"])
+    ws.append(["金川县雪梨果业开发有限责任公司"])
+    wb.save(employee_file)
+    build_category_file(category_file)
+
+    client = TestClient(app)
+    with employee_file.open("rb") as employee_fp, category_file.open("rb") as category_fp:
+        response = client.post(
+            "/audit/upload",
+            files={
+                "employee_file": ("employee.xlsx", employee_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                "category_file": ("category.xlsx", category_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            },
+        )
+
+    assert response.status_code == 400
+    assert "文件格式不符合模板" in response.text
+    assert "员工录入表缺少表头" in response.text

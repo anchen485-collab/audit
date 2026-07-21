@@ -42,7 +42,6 @@ async def upload_audit_files(
     """接收两份 Excel，执行审计并返回下载链接。"""
     _validate_xlsx(employee_file)
     _validate_xlsx(category_file)
-    paths = ensure_storage_dirs()
     job_id = f"审计结果_{uuid4().hex[:8]}"
     logger.info(
         "audit_upload_start 审计上传开始 job_id=%s employee_file=%s category_file=%s",
@@ -50,24 +49,33 @@ async def upload_audit_files(
         employee_file.filename,
         category_file.filename,
     )
-    employee_path = paths["uploads"] / f"{job_id}_employee.xlsx"
-    category_path = paths["uploads"] / f"{job_id}_category.xlsx"
-    employee_path.write_bytes(await employee_file.read())
-    category_path.write_bytes(await category_file.read())
-    logger.info(
-        "audit_upload_saved 上传文件已保存 job_id=%s employee_path=%s category_path=%s",
-        job_id,
-        employee_path,
-        category_path,
-    )
 
-    state = run_audit_workflow(
-        employee_file=employee_path,
-        category_file=category_path,
-        output_dir=paths["outputs"],
-        provider=get_company_provider(),
-        job_id=job_id,
-    )
+    try:
+        paths = ensure_storage_dirs()
+        employee_path = paths["uploads"] / f"{job_id}_employee.xlsx"
+        category_path = paths["uploads"] / f"{job_id}_category.xlsx"
+        employee_path.write_bytes(await employee_file.read())
+        category_path.write_bytes(await category_file.read())
+        logger.info(
+            "audit_upload_saved 上传文件已保存 job_id=%s employee_path=%s category_path=%s",
+            job_id,
+            employee_path,
+            category_path,
+        )
+        state = run_audit_workflow(
+            employee_file=employee_path,
+            category_file=category_path,
+            output_dir=paths["outputs"],
+            provider=get_company_provider(),
+            job_id=job_id,
+        )
+    except ValueError as exc:
+        logger.warning("audit_upload_validation_failed 文件格式校验失败 job_id=%s error=%s", job_id, exc)
+        return _error_response(request, "文件格式不符合模板", str(exc), 400)
+    except Exception as exc:
+        logger.exception("audit_upload_failed 审计处理异常 job_id=%s", job_id)
+        return _error_response(request, "审计处理失败", str(exc), 500)
+
     logger.info("audit_upload_done 审计上传处理完成 job_id=%s output_path=%s", job_id, state["output_path"])
     return templates.TemplateResponse(
         request,
@@ -102,3 +110,16 @@ def _validate_xlsx(file: UploadFile):
     """第一版只支持 xlsx 文件。"""
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail=f"{file.filename} 不是 .xlsx 文件")
+
+
+def _error_response(request: Request, title: str, message: str, status_code: int) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "title": title,
+            "message": message,
+            "status_code": status_code,
+        },
+        status_code=status_code,
+    )

@@ -27,7 +27,8 @@ def load_env_file(path: str | Path | None = None) -> dict[str, str]:
 def get_storage_dir() -> Path:
     """读取存储目录；测试时可以通过环境变量覆盖。"""
     load_env_file()
-    return Path(os.getenv("AUDIT_STORAGE_DIR", "storage")).resolve()
+    storage_dir = os.getenv("AUDIT_STORAGE_DIR") or "storage"
+    return Path(storage_dir).resolve()
 
 
 def ensure_storage_dirs() -> dict[str, Path]:
