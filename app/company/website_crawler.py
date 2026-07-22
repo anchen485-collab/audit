@@ -6,10 +6,13 @@ from dataclasses import dataclass, field
 import logging
 import re
 import threading
+from time import perf_counter
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 import requests
+
+from app.core.trace import elapsed_ms
 
 
 logger = logging.getLogger(__name__)
@@ -141,6 +144,7 @@ class WebsiteCrawler:
             self.max_depth,
             self.timeout,
         )
+        crawl_start = perf_counter()
         base_domain = urlparse(normalized_url).netloc
         queue: deque[LinkCandidate] = deque([LinkCandidate(normalized_url, 0, True, 0)])
         queued = {normalized_url}
@@ -152,9 +156,18 @@ class WebsiteCrawler:
             current = queue.popleft()
             if current.url in fetched_html:
                 continue
+            page_start = perf_counter()
             try:
                 html = self._fetch(current.url)
             except Exception as exc:
+                page_duration_ms = elapsed_ms(page_start)
+                logger.info(
+                    "website_crawl_page_done 官网页面访问结束 url=%s depth=%s is_target=%s success=false duration_ms=%.2f",
+                    current.url,
+                    current.depth,
+                    current.is_target,
+                    page_duration_ms,
+                )
                 fallback_url = self._fallback_start_url(current.url, exc)
                 if not visited and fallback_url and fallback_url not in queued and fallback_url not in fetched_html:
                     logger.info(
@@ -172,6 +185,7 @@ class WebsiteCrawler:
                 logger.warning("website_crawl_page_failed 官网页面访问失败 url=%s depth=%s error=%s", current.url, current.depth, exc)
                 continue
 
+            page_duration_ms = elapsed_ms(page_start)
             fetched_html[current.url] = html
             visited.append(current.url)
             logger.info(
@@ -179,6 +193,13 @@ class WebsiteCrawler:
                 current.url,
                 current.depth,
                 current.is_target,
+            )
+            logger.info(
+                "website_crawl_page_done 官网页面访问结束 url=%s depth=%s is_target=%s success=true duration_ms=%.2f",
+                current.url,
+                current.depth,
+                current.is_target,
+                page_duration_ms,
             )
             # 链接文字可能很泛，例如“了解更多”；抓到页面后再用标题、面包屑、正文做一次目标页判断。
             if current.is_target or self._is_target_page(current.url, html):
@@ -209,12 +230,26 @@ class WebsiteCrawler:
                 len(visited),
                 len(text),
             )
+            logger.info(
+                "website_crawl_done 官网爬取结束 url=%s success=false visited_count=%s text_length=%s duration_ms=%.2f",
+                normalized_url,
+                len(visited),
+                len(text),
+                elapsed_ms(crawl_start),
+            )
             return WebsiteCrawlResult(success=False, url=normalized_url, text=text, visited_urls=visited, error="官网证据不足")
         logger.info(
             "website_crawl_success 官网爬取成功 url=%s visited_count=%s text_length=%s",
             normalized_url,
             len(visited),
             len(text),
+        )
+        logger.info(
+            "website_crawl_done 官网爬取结束 url=%s success=true visited_count=%s text_length=%s duration_ms=%.2f",
+            normalized_url,
+            len(visited),
+            len(text),
+            elapsed_ms(crawl_start),
         )
         return WebsiteCrawlResult(success=True, url=normalized_url, text=text, visited_urls=visited)
 
@@ -480,13 +515,33 @@ class Crawl4AIWebsiteCrawler:
             self.max_depth,
             self.timeout,
         )
+        crawl_start = perf_counter()
         try:
-            return self._run_async(lambda: self._crawl_async(normalized_url))
+            result = self._run_async(lambda: self._crawl_async(normalized_url))
+            logger.info(
+                "crawl4ai_crawl_done Crawl4AI 官网爬取结束 url=%s success=%s visited_count=%s text_length=%s duration_ms=%.2f",
+                normalized_url,
+                result.success,
+                len(result.visited_urls),
+                len(result.text or ""),
+                elapsed_ms(crawl_start),
+            )
+            return result
         except ImportError as exc:
             logger.warning("crawl4ai_crawl_missing_dependency Crawl4AI 未安装 url=%s error=%s", normalized_url, exc)
+            logger.info(
+                "crawl4ai_crawl_done Crawl4AI 官网爬取结束 url=%s success=false visited_count=0 text_length=0 duration_ms=%.2f",
+                normalized_url,
+                elapsed_ms(crawl_start),
+            )
             return WebsiteCrawlResult(success=False, url=normalized_url, error="Crawl4AI 未安装或未完成浏览器初始化")
         except Exception as exc:
             logger.warning("crawl4ai_crawl_failed Crawl4AI 官网爬取失败 url=%s error=%s", normalized_url, exc)
+            logger.info(
+                "crawl4ai_crawl_done Crawl4AI 官网爬取结束 url=%s success=false visited_count=0 text_length=0 duration_ms=%.2f",
+                normalized_url,
+                elapsed_ms(crawl_start),
+            )
             return WebsiteCrawlResult(success=False, url=normalized_url, error=f"Crawl4AI 官网爬取失败：{exc}")
 
     async def _crawl_async(self, normalized_url: str) -> WebsiteCrawlResult:

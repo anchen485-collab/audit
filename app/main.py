@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -11,6 +12,7 @@ from app.audit.graph import run_audit_workflow
 from app.company.factory import get_company_provider
 from app.core.config import ensure_storage_dirs
 from app.core.logging_config import configure_logging
+from app.core.trace import elapsed_ms
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -39,6 +41,7 @@ async def upload_audit_files(
     employee_file: UploadFile = File(...),
 ):
     """接收员工录入 Excel，使用服务端固定分类规则执行审计。"""
+    upload_start = perf_counter()
     _validate_xlsx(employee_file)
     job_id = f"审计结果_{uuid4().hex[:8]}"
     logger.info(
@@ -63,13 +66,24 @@ async def upload_audit_files(
             job_id=job_id,
         )
     except ValueError as exc:
-        logger.warning("audit_upload_validation_failed 文件格式校验失败 job_id=%s error=%s", job_id, exc)
+        logger.warning(
+            "audit_upload_validation_failed 文件格式校验失败 job_id=%s error=%s duration_ms=%.2f",
+            job_id,
+            exc,
+            elapsed_ms(upload_start),
+        )
         return _error_response(request, "文件格式不符合模板", str(exc), 400)
     except Exception as exc:
-        logger.exception("audit_upload_failed 审计处理异常 job_id=%s", job_id)
+        logger.exception("audit_upload_failed 审计处理异常 job_id=%s duration_ms=%.2f", job_id, elapsed_ms(upload_start))
         return _error_response(request, "审计处理失败", str(exc), 500)
 
-    logger.info("audit_upload_done 审计上传处理完成 job_id=%s output_path=%s", job_id, state["output_path"])
+    logger.info(
+        "audit_upload_done 审计上传处理完成 job_id=%s trace_id=%s output_path=%s duration_ms=%.2f",
+        job_id,
+        state.get("trace_id"),
+        state["output_path"],
+        elapsed_ms(upload_start),
+    )
     return templates.TemplateResponse(
         request,
         "result.html",

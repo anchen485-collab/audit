@@ -4,12 +4,14 @@ from dataclasses import dataclass
 import json
 import logging
 import os
+from time import perf_counter
 from typing import Any
 
 import requests
 
 from app.core.config import load_env_file
 from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
+from app.core.trace import elapsed_ms
 
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,7 @@ class ClassificationAgent:
         company: CompanyInfo,
         rules: list[CategoryRule],
     ) -> AgentClassificationResult:
+        classify_start = perf_counter()
         category_text = format_category_rules_for_agent(rules, self.max_category_chars)
         evidence_text = (company.business_scope or "")[: self.max_evidence_chars]
         messages = [
@@ -98,8 +101,26 @@ class ClassificationAgent:
                 "content": _build_user_prompt(record, company, category_text, evidence_text),
             },
         ]
-        data = self.chat_client.complete_json(messages)
-        return parse_agent_result(data)
+        try:
+            data = self.chat_client.complete_json(messages)
+            result = parse_agent_result(data)
+        except Exception as exc:
+            logger.info(
+                "classification_agent_timing 大模型分类耗时 company=%s row=%s success=false result=异常 duration_ms=%.2f error=%s",
+                record.company_name or record.company_raw,
+                record.row_number,
+                elapsed_ms(classify_start),
+                exc.__class__.__name__,
+            )
+            raise
+        logger.info(
+            "classification_agent_timing 大模型分类耗时 company=%s row=%s success=true result=%s duration_ms=%.2f",
+            record.company_name or record.company_raw,
+            record.row_number,
+            result.audit_result,
+            elapsed_ms(classify_start),
+        )
+        return result
 
 
 def build_classification_agent_from_env() -> ClassificationAgent | None:

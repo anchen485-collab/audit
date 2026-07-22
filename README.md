@@ -115,6 +115,37 @@ hybrid    # 默认，轻量爬虫失败后自动切换到 Crawl4AI
 AUDIT_LOG_LEVEL=INFO
 ```
 
+## 耗时 Trace 排查
+
+每次审计都会生成一个 `trace_id`，同一次上传、LangGraph 节点执行和最终完成日志会共用这个标识。排查执行时间过长时，优先在控制台搜索：
+
+```text
+audit_trace_stage_done
+audit_query_company_timing
+website_crawl_page_done
+website_crawl_done
+website_provider_timing
+classification_agent_timing
+audit_upload_done
+```
+
+常见判断方式：
+
+- `audit_trace_stage_done stage=query_company` 慢：通常是官网访问慢、目标网站阻塞或缓存未命中。
+- `website_crawl_page_done` 慢：定位具体慢 URL，重点看 `duration_ms`、`depth`、`is_target`。
+- `website_crawl_done` 慢：说明单个官网总爬取耗时高，可以降低 `WEBSITE_CRAWL_MAX_PAGES` 或 `WEBSITE_CRAWL_MAX_DEPTH`。
+- `audit_trace_stage_done stage=match_rules` 慢：通常是大模型分类 Agent 调用耗时，继续看 `classification_agent_timing`。
+- `audit_upload_done` 慢：表示从上传到导出整体耗时高，可用同一 `trace_id` 关联前面的阶段日志。
+
+推荐第一版排查配置：
+
+```text
+AUDIT_LOG_LEVEL=INFO
+WEBSITE_CRAWL_MAX_PAGES=8
+WEBSITE_CRAWL_MAX_DEPTH=3
+WEBSITE_CRAWL_TIMEOUT=8
+```
+
 ## 启动服务
 
 ```bash

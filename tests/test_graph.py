@@ -42,6 +42,17 @@ def test_run_audit_workflow_exports_result_excel(tmp_path):
     state = run_audit_workflow(employee_file, category_file, output_dir, provider)
 
     assert state["output_path"]
+    assert state["trace_id"].startswith("audit_")
+    assert [item["stage"] for item in state["trace"]] == [
+        "read_employee",
+        "read_category",
+        "query_company",
+        "match_rules",
+        "build_summary",
+        "export_result",
+        "audit_workflow",
+    ]
+    assert all(item["duration_ms"] >= 0 for item in state["trace"])
     assert Path(state["output_path"]).exists()
     wb = load_workbook(state["output_path"], data_only=True)
     assert "审计明细" in wb.sheetnames

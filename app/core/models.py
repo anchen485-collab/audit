@@ -84,3 +84,5 @@ class AuditGraphState(TypedDict, total=False):
     output_path: str
     errors: list[str]
     steps: list[str]
+    trace_id: str
+    trace: list[dict[str, Any]]

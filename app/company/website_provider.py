@@ -1,11 +1,13 @@
 import logging
 from pathlib import Path
+from time import perf_counter
 
 from app.DataCleaning import WebsiteTextCleaner
 from app.company.cache import CompanyInfoCache
 from app.company.provider import CompanyInfoProvider
 from app.company.website_crawler import WebsiteCrawler
 from app.core.models import CompanyInfo, EmployeeRecord
+from app.core.trace import elapsed_ms
 
 
 logger = logging.getLogger(__name__)
@@ -36,17 +38,34 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
         )
 
     def get_company_info_for_record(self, record: EmployeeRecord) -> CompanyInfo:
+        provider_start = perf_counter()
         if not record.website_url:
             logger.warning("website_provider_missing_url 官网链接缺失 company=%s row=%s", record.company_raw, record.row_number)
+            logger.info(
+                "website_provider_timing 官网信息源耗时 company=%s cache_hit=false success=false duration_ms=%.2f",
+                record.company_raw,
+                elapsed_ms(provider_start),
+            )
             return self._failed(record, "官网链接缺失")
 
         if self.cache:
             cached = self.cache.get(record.website_url)
             if cached:
                 if cached.success:
-                    logger.info("website_provider_cache_hit 官网成功缓存命中 company=%s url=%s", record.company_raw, record.website_url)
+                    cache_duration_ms = elapsed_ms(provider_start)
+                    logger.info(
+                        "website_provider_cache_hit 官网成功缓存命中 company=%s url=%s duration_ms=%.2f",
+                        record.company_raw,
+                        record.website_url,
+                        cache_duration_ms,
+                    )
                     cached = self._upgrade_cached_info(record, cached)
                     self.cache.set(record.website_url, cached)
+                    logger.info(
+                        "website_provider_timing 官网信息源耗时 company=%s cache_hit=true success=true duration_ms=%.2f",
+                        record.company_raw,
+                        elapsed_ms(provider_start),
+                    )
                     return cached
                 logger.info(
                     "website_provider_failed_cache_ignored 官网失败缓存已忽略，将重新爬取 company=%s url=%s error=%s",
@@ -56,35 +75,47 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
                 )
 
         logger.info("website_provider_crawl_start 开始从官网获取企业信息 company=%s url=%s", record.company_raw, record.website_url)
+        crawl_start = perf_counter()
         crawl_result = self.crawler.crawl(record.website_url)
+        crawl_duration_ms = elapsed_ms(crawl_start)
         if not crawl_result.success:
             logger.warning(
-                "website_provider_crawl_failed 官网企业信息获取失败 company=%s url=%s error=%s visited_count=%s",
+                "website_provider_crawl_failed 官网企业信息获取失败 company=%s url=%s error=%s visited_count=%s duration_ms=%.2f",
                 record.company_raw,
                 record.website_url,
                 crawl_result.error,
                 len(crawl_result.visited_urls),
+                crawl_duration_ms,
             )
             info = self._failed(record, crawl_result.error, crawl_result)
             if self.cache:
                 self.cache.set(record.website_url, info)
+            logger.info(
+                "website_provider_timing 官网信息源耗时 company=%s cache_hit=false success=false duration_ms=%.2f",
+                record.company_raw,
+                elapsed_ms(provider_start),
+            )
             return info
 
         logger.info(
-            "website_provider_crawl_success 官网企业信息获取成功 company=%s url=%s visited_count=%s text_length=%s",
+            "website_provider_crawl_success 官网企业信息获取成功 company=%s url=%s visited_count=%s text_length=%s duration_ms=%.2f",
             record.company_raw,
             record.website_url,
             len(crawl_result.visited_urls),
             len(crawl_result.text or ""),
+            crawl_duration_ms,
         )
+        clean_start = perf_counter()
         cleaned = self.text_cleaner.clean(crawl_result.text)
+        clean_duration_ms = elapsed_ms(clean_start)
         logger.info(
-            "website_provider_text_cleaned 官网文本清洗完成 company=%s original_length=%s cleaned_length=%s kept_fragments=%s dropped_fragments=%s",
+            "website_provider_text_cleaned 官网文本清洗完成 company=%s original_length=%s cleaned_length=%s kept_fragments=%s dropped_fragments=%s duration_ms=%.2f",
             record.company_raw,
             cleaned.original_length,
             cleaned.cleaned_length,
             cleaned.kept_fragment_count,
             cleaned.dropped_fragment_count,
+            clean_duration_ms,
         )
         info = CompanyInfo(
             query_name=record.company_name or record.company_raw,
@@ -102,6 +133,11 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
         )
         if self.cache:
             self.cache.set(record.website_url, info)
+        logger.info(
+            "website_provider_timing 官网信息源耗时 company=%s cache_hit=false success=true duration_ms=%.2f",
+            record.company_raw,
+            elapsed_ms(provider_start),
+        )
         return info
 
     def _failed(self, record: EmployeeRecord, error: str, crawl_result=None) -> CompanyInfo:

@@ -54,6 +54,10 @@ def test_audit_workflow_writes_important_logs(tmp_path, caplog):
     assert any("audit_query_company_done" in message for message in messages)
     assert any("audit_export_done" in message for message in messages)
     assert any("audit_workflow_done" in message for message in messages)
+    assert any("audit_trace_stage_done" in message and "stage=read_employee" in message for message in messages)
+    assert any("audit_trace_stage_done" in message and "stage=audit_workflow" in message for message in messages)
+    assert any("audit_query_company_timing" in message and "duration_ms=" in message for message in messages)
+    assert any("total_duration_ms=" in message for message in messages)
 
 
 def test_website_crawler_writes_page_logs(caplog):
@@ -73,4 +77,6 @@ def test_website_crawler_writes_page_logs(caplog):
     messages = [record.getMessage() for record in caplog.records]
     assert any("website_crawl_start" in message for message in messages)
     assert any("website_crawl_page_success" in message for message in messages)
+    assert any("website_crawl_page_done" in message and "duration_ms=" in message for message in messages)
     assert any("website_crawl_success" in message for message in messages)
+    assert any("website_crawl_done" in message and "duration_ms=" in message for message in messages)

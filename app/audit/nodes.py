@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from time import perf_counter
 
 from app.agent import build_classification_agent_from_env
 from app.audit.rules import audit_record, clean_company_name
@@ -7,6 +8,7 @@ from app.audit.summary import build_person_summary
 from app.category.rule_index import load_category_rules_from_config
 from app.company.provider import CompanyInfoProvider
 from app.core.models import AuditGraphState
+from app.core.trace import elapsed_ms
 from app.excel.input_reader import read_employee_excel
 from app.excel.result_writer import write_audit_result_excel
 
@@ -41,8 +43,10 @@ def query_company_node(state: AuditGraphState) -> AuditGraphState:
                 provider.__class__.__name__,
                 record.website_url,
             )
+            query_start = perf_counter()
             infos[company_name] = provider.get_company_info_for_record(record)
             info = infos[company_name]
+            query_duration_ms = elapsed_ms(query_start)
             if info.success:
                 logger.info(
                     "audit_query_company_success 企业信息获取成功 company=%s source=%s scope_length=%s",
@@ -57,6 +61,14 @@ def query_company_node(state: AuditGraphState) -> AuditGraphState:
                     info.source,
                     info.error,
                 )
+            logger.info(
+                "audit_query_company_timing 企业查询耗时 row=%s company=%s provider=%s success=%s duration_ms=%.2f",
+                record.row_number,
+                company_name,
+                provider.__class__.__name__,
+                info.success,
+                query_duration_ms,
+            )
     return {"company_infos": infos, "steps": state.get("steps", []) + [f"查询企业 {len(infos)} 家"]}
 
 

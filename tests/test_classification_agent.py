@@ -130,3 +130,32 @@ def test_classification_agent_prompt_does_not_include_stage():
 
     assert "当前环节" not in user_prompt
     assert "销售" not in user_prompt
+
+
+def test_classification_agent_writes_timing_log(caplog):
+    client = CaptureChatClient()
+    agent = ClassificationAgent(client)
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="相阳",
+        category="农业",
+        subcategory="种植业",
+        company_raw="测试企业",
+    )
+    company = CompanyInfo(
+        query_name="测试企业",
+        company_name="测试企业",
+        business_scope="公司简介显示主营水稻种植。",
+        status="",
+        source="website",
+        success=True,
+    )
+
+    with caplog.at_level("INFO"):
+        agent.classify(record, company, [CategoryRule("农业", "种植业", "谷类作物", "类型", ["水稻"])])
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("classification_agent_timing" in message for message in messages)
+    assert any("duration_ms=" in message for message in messages)
+    assert not any("api_key" in message.lower() for message in messages)
