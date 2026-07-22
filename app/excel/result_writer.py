@@ -4,6 +4,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 from app.audit.summary import build_person_summary
+from app.company.website_crawler import WebsiteCrawler
 from app.core.models import AuditResult
 
 
@@ -63,7 +64,7 @@ def write_audit_result_excel(results: list[AuditResult], output_path: str | Path
                 result.website_url,
                 result.company_name,
                 result.company_status,
-                result.business_scope,
+                _external_evidence_for_display(result.business_scope),
                 result.error_type,
                 result.reason,
                 result.suggestion,
@@ -100,3 +101,11 @@ def _style_sheet(ws):
             fill_color = STATUS_FILL.get(status)
             if fill_color:
                 row[7].fill = PatternFill("solid", fgColor=fill_color)
+
+
+def _external_evidence_for_display(text: str) -> str:
+    """导出前再做一次展示文本修复，避免 Excel 明细里残留爬虫乱码。"""
+    repaired = WebsiteCrawler._repair_compacted_text(text)
+    if WebsiteCrawler._looks_mojibake(repaired):
+        return "外部证据文本编码异常，已隐藏乱码；请清理官网缓存后重新审计"
+    return repaired
