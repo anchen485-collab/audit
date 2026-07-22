@@ -26,7 +26,10 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "web" / "static")), na
 @app.get("/health")
 def health():
     """健康检查接口。"""
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "upload_category_file_required": False,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -39,28 +42,38 @@ def index(request: Request):
 async def upload_audit_files(
     request: Request,
     employee_file: UploadFile = File(...),
+    category_file: UploadFile | None = File(None),
 ):
-    """接收员工录入 Excel，使用服务端固定分类规则执行审计。"""
+    """接收员工录入 Excel，默认使用服务端固定分类规则执行审计。"""
     upload_start = perf_counter()
     _validate_xlsx(employee_file)
+    if category_file and category_file.filename:
+        _validate_xlsx(category_file)
     job_id = f"审计结果_{uuid4().hex[:8]}"
     logger.info(
-        "audit_upload_start 审计上传开始 job_id=%s employee_file=%s category_source=configured_json",
+        "audit_upload_start 审计上传开始 job_id=%s employee_file=%s category_file=%s",
         job_id,
         employee_file.filename,
+        category_file.filename if category_file else "configured_json",
     )
 
     try:
         paths = ensure_storage_dirs()
         employee_path = paths["uploads"] / f"{job_id}_employee.xlsx"
         employee_path.write_bytes(await employee_file.read())
+        category_path = None
+        if category_file and category_file.filename:
+            category_path = paths["uploads"] / f"{job_id}_category.xlsx"
+            category_path.write_bytes(await category_file.read())
         logger.info(
-            "audit_upload_saved 上传文件已保存 job_id=%s employee_path=%s",
+            "audit_upload_saved 上传文件已保存 job_id=%s employee_path=%s category_path=%s",
             job_id,
             employee_path,
+            category_path or "configured_json",
         )
         state = run_audit_workflow(
             employee_file=employee_path,
+            category_file=category_path,
             output_dir=paths["outputs"],
             provider=get_company_provider(),
             job_id=job_id,

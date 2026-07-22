@@ -60,19 +60,26 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
                         cache_duration_ms,
                     )
                     cached = self._upgrade_cached_info(record, cached)
-                    self.cache.set(record.website_url, cached)
+                    if cached.business_scope:
+                        self.cache.set(record.website_url, cached)
+                        logger.info(
+                            "website_provider_timing 官网信息源耗时 company=%s cache_hit=true success=true duration_ms=%.2f",
+                            record.company_raw,
+                            elapsed_ms(provider_start),
+                        )
+                        return cached
                     logger.info(
-                        "website_provider_timing 官网信息源耗时 company=%s cache_hit=true success=true duration_ms=%.2f",
+                        "website_provider_empty_success_cache_ignored 官网成功缓存缺少有效业务文本，将重新爬取 company=%s url=%s",
                         record.company_raw,
-                        elapsed_ms(provider_start),
+                        record.website_url,
                     )
-                    return cached
-                logger.info(
-                    "website_provider_failed_cache_ignored 官网失败缓存已忽略，将重新爬取 company=%s url=%s error=%s",
-                    record.company_raw,
-                    record.website_url,
-                    cached.error,
-                )
+                else:
+                    logger.info(
+                        "website_provider_failed_cache_ignored 官网失败缓存已忽略，将重新爬取 company=%s url=%s error=%s",
+                        record.company_raw,
+                        record.website_url,
+                        cached.error,
+                    )
 
         logger.info("website_provider_crawl_start 开始从官网获取企业信息 company=%s url=%s", record.company_raw, record.website_url)
         crawl_start = perf_counter()
@@ -117,6 +124,19 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             cleaned.dropped_fragment_count,
             clean_duration_ms,
         )
+        if not cleaned.text:
+            logger.warning(
+                "website_provider_text_empty 官网文本清洗后无有效业务证据 company=%s url=%s raw_length=%s",
+                record.company_raw,
+                record.website_url,
+                len(crawl_result.text or ""),
+            )
+            info = self._failed(record, "官网文本清洗后无有效业务证据", crawl_result)
+            info.raw["raw_crawl_text"] = crawl_result.text
+            info.raw["cleaning"] = self._cleaning_payload(cleaned)
+            if self.cache:
+                self.cache.set(record.website_url, info)
+            return info
         info = CompanyInfo(
             query_name=record.company_name or record.company_raw,
             company_name=record.company_name or record.company_raw,
@@ -189,4 +209,5 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             "cleaned_length": cleaned.cleaned_length,
             "kept_fragment_count": cleaned.kept_fragment_count,
             "dropped_fragment_count": cleaned.dropped_fragment_count,
+            "mode": cleaned.mode,
         }

@@ -48,6 +48,28 @@ def test_upload_employee_excel_returns_download_link_with_configured_category_ru
     assert any("audit_upload_done" in record.getMessage() and "duration_ms=" in record.getMessage() for record in caplog.records)
 
 
+def test_upload_accepts_legacy_category_file_field(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUDIT_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("CATEGORY_RULES_JSON_PATH", str(tmp_path / "category_rules.json"))
+    employee_file = tmp_path / "employee.xlsx"
+    category_file = tmp_path / "category.xlsx"
+    build_employee_file(employee_file)
+    build_category_file(category_file)
+
+    client = TestClient(app)
+    with employee_file.open("rb") as employee_fp, category_file.open("rb") as category_fp:
+        response = client.post(
+            "/audit/upload",
+            files={
+                "employee_file": ("employee.xlsx", employee_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                "category_file": ("category.xlsx", category_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            },
+        )
+
+    assert response.status_code == 200
+    assert "/audit/download/" in response.text
+
+
 def test_upload_with_invalid_employee_headers_returns_error_page(tmp_path, monkeypatch):
     monkeypatch.setenv("AUDIT_STORAGE_DIR", str(tmp_path / "storage"))
     monkeypatch.setenv("CATEGORY_RULES_JSON_PATH", str(tmp_path / "category_rules.json"))

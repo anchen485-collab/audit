@@ -62,3 +62,50 @@ def test_website_text_cleaner_keeps_business_signal_without_known_section_headin
     assert "兽用生物制品制造" in cleaned.text
     assert "香甜软糯" not in cleaned.text
     assert "行业大奖" not in cleaned.text
+
+
+def test_website_text_cleaner_fallback_keeps_product_service_evidence():
+    cleaner = WebsiteTextCleaner()
+
+    cleaned = cleaner.clean(
+        """
+        百和仕BHS-全球商业空间一站式服务商
+        构建消费者与品牌终端高品质体验空间
+        走进百和仕 构建消费者与品牌终端最佳体验空间
+        品牌终端商业空间体验升级，覆盖门店陈列、终端展示和品牌体验空间。
+        """
+    )
+
+    assert cleaned.mode == "fallback"
+    assert "商业空间体验升级" in cleaned.text
+    assert "终端展示" in cleaned.text
+
+
+def test_website_text_cleaner_fallback_still_drops_maintenance_pages():
+    cleaner = WebsiteTextCleaner()
+
+    cleaned = cleaner.clean("网站系统更新维护中 品牌官方网站正在升级中，敬请期待……")
+
+    assert cleaned.mode == "fallback"
+    assert cleaned.text == ""
+
+
+def test_website_text_cleaner_keeps_english_business_evidence():
+    cleaner = WebsiteTextCleaner()
+
+    cleaned = cleaner.clean(
+        """
+        Home Contact Copyright 2025 All rights reserved.
+        Company introduction Guangxin District Zhongyifa Hardware Products Factory
+        is a company engaged in the production of stainless steel, hardware products,
+        and stoves. The company's business scope includes the production and sales
+        of stainless steel, hardware products, and stoves.
+        Telephone: 020-12345678
+        """
+    )
+
+    assert cleaned.mode == "strict"
+    assert "production of stainless steel" in cleaned.text
+    assert "business scope includes" in cleaned.text
+    assert "All rights reserved" not in cleaned.text
+    assert "020-12345678" not in cleaned.text

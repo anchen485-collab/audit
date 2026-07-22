@@ -148,3 +148,63 @@ def test_website_provider_ignores_failed_cache_and_recrawls(tmp_path):
     assert second.success is True
     assert crawler.urls == ["https://demo.com"]
     assert "蔬菜种植、加工、销售" in info.business_scope
+
+
+def test_website_provider_recleans_empty_success_cache_with_raw_text(tmp_path):
+    cache_path = tmp_path / "website_cache.json"
+    cache_path.write_text(
+        """
+        {
+          "https://demo.com": {
+            "query_name": "百和仕展示科技有限公司",
+            "company_name": "百和仕展示科技有限公司",
+            "business_scope": "",
+            "status": "",
+            "source": "website",
+            "success": true,
+            "error": "",
+            "raw": {
+              "website_url": "https://demo.com",
+              "visited_urls": ["https://demo.com"],
+              "raw_crawl_text": "百和仕BHS-全球商业空间一站式服务商 品牌终端商业空间体验升级，覆盖门店陈列、终端展示和品牌体验空间。",
+              "cleaning": {
+                "version": 4,
+                "cleaned_length": 0
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    crawler = FakeCrawler(WebsiteCrawlResult(success=True, url="https://demo.com", text="不应该重新爬取", visited_urls=[]))
+    provider = WebsiteCompanyInfoProvider(crawler=crawler, cache_path=cache_path)
+
+    info = provider.get_company_info_for_record(build_record())
+
+    assert crawler.urls == []
+    assert "商业空间体验升级" in info.business_scope
+    assert info.raw["cleaning"]["version"] == provider.text_cleaner.CLEANING_VERSION
+    assert info.raw["cleaning"]["mode"] == "fallback"
+
+
+def test_website_provider_marks_empty_cleaned_text_as_failed(tmp_path):
+    crawler = FakeCrawler(
+        WebsiteCrawlResult(
+            success=True,
+            url="https://demo.com",
+            text="网站系统更新维护中 品牌官方网站正在升级中，敬请期待……",
+            visited_urls=["https://demo.com"],
+        )
+    )
+    provider = WebsiteCompanyInfoProvider(crawler=crawler, cache_path=tmp_path / "website_cache.json")
+
+    info = provider.get_company_info_for_record(build_record())
+    second = provider.get_company_info_for_record(build_record())
+
+    assert info.success is False
+    assert info.error == "官网文本清洗后无有效业务证据"
+    assert info.raw["raw_crawl_text"]
+    assert info.raw["cleaning"]["mode"] == "fallback"
+    assert crawler.urls == ["https://demo.com", "https://demo.com"]
+    assert second.success is False
