@@ -37,8 +37,8 @@ def get_company_provider() -> CompanyInfoProvider:
 
 
 def _build_website_crawler():
-    max_pages = int(os.getenv("WEBSITE_CRAWL_MAX_PAGES", "4"))
-    max_depth = int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "2"))
+    max_pages = int(os.getenv("WEBSITE_CRAWL_MAX_PAGES", "8"))
+    max_depth = int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "3"))
     timeout = int(os.getenv("WEBSITE_CRAWL_TIMEOUT", "8"))
     engine = os.getenv("WEBSITE_CRAWLER_ENGINE", "hybrid").strip().lower()
 

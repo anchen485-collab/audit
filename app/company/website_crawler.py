@@ -17,12 +17,29 @@ logger = logging.getLogger(__name__)
 
 TARGET_MODULES = {
     "业务领域": ["业务领域", "业务范围", "主营业务", "产品服务", "产品中心", "服务领域"],
-    "公司简介": ["公司简介", "企业简介", "关于我们", "公司介绍", "走进我们"],
+    "公司简介": [
+        "公司简介",
+        "企业简介",
+        "关于我们",
+        "公司介绍",
+        "企业介绍",
+        "公司概况",
+        "企业概况",
+        "品牌介绍",
+        "走进我们",
+        "走进企业",
+        "关于",
+    ],
     "经典案例": ["经典案例", "客户案例", "成功案例", "案例展示", "项目案例"],
 }
 DISCOVERY_WORDS = [
+    "了解更多",
+    "更多",
     "关于",
     "简介",
+    "介绍",
+    "概况",
+    "走进",
     "公司",
     "业务",
     "领域",
@@ -163,7 +180,8 @@ class WebsiteCrawler:
                 current.depth,
                 current.is_target,
             )
-            if current.is_target:
+            # 链接文字可能很泛，例如“了解更多”；抓到页面后再用标题、面包屑、正文做一次目标页判断。
+            if current.is_target or self._is_target_page(current.url, html):
                 evidence_texts.append(self.extract_text(html))
 
             if current.depth >= self.max_depth:
@@ -213,6 +231,8 @@ class WebsiteCrawler:
         priority_index = {name: index for index, name in enumerate(TARGET_MODULES)}
 
         for link in soup.find_all("a"):
+            if self._is_footer_link(link):
+                continue
             href = (link.get("href") or "").strip()
             label = self._compact_text(link.get_text(" ", strip=True))
             absolute_url = urljoin(base_url, href).split("#", 1)[0].rstrip("/")
@@ -390,6 +410,43 @@ class WebsiteCrawler:
     def _is_discovery_link(label: str, url: str) -> bool:
         text = f"{label} {url}".lower()
         return any(word.lower() in text for word in DISCOVERY_WORDS)
+
+    @staticmethod
+    def _is_target_page(url: str, html: str) -> bool:
+        """用页面标题、面包屑和正文片段补判目标页，覆盖“了解更多 -> 关于品牌”这类结构。"""
+        soup = BeautifulSoup(html, "html.parser")
+        title = soup.title.get_text(" ", strip=True) if soup.title else ""
+        headings = " ".join(tag.get_text(" ", strip=True) for tag in soup.find_all(["h1", "h2", "h3"]))
+        body_preview = WebsiteCrawler._compact_text(soup.get_text(" ", strip=True))[:800]
+        priority_index = {name: index for index, name in enumerate(TARGET_MODULES)}
+        return WebsiteCrawler._target_priority(f"{title} {headings} {body_preview}", url, priority_index) is not None
+
+    @staticmethod
+    def _is_footer_link(link) -> bool:
+        """跳过页面底部的导航和资源链接，避免把地址、门店、素材中心等低价值页面加入爬取队列。"""
+        for parent in [link, *link.parents]:
+            tag_name = getattr(parent, "name", "") or ""
+            if tag_name.lower() == "footer":
+                return True
+            attrs_text = WebsiteCrawler._node_attrs_text(parent)
+            if any(marker in attrs_text for marker in ["footer", "foot", "copyright", "底部", "页脚"]):
+                return True
+        return False
+
+    @staticmethod
+    def _node_attrs_text(node) -> str:
+        class_value = node.get("class") or []
+        if isinstance(class_value, str):
+            class_text = class_value
+        else:
+            class_text = " ".join(str(item) for item in class_value)
+        values = [
+            node.get("id") or "",
+            class_text,
+            node.get("role") or "",
+            node.get("aria-label") or "",
+        ]
+        return " ".join(str(value) for value in values).lower()
 
 
 class Crawl4AIWebsiteCrawler:

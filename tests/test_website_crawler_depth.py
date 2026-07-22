@@ -75,3 +75,87 @@ def test_website_crawler_respects_max_depth_limit():
     assert result.error == "官网证据不足"
     assert "https://demo.com/level1/profile" not in visited
     assert "深层文本" not in result.text
+
+
+def test_website_crawler_finds_about_page_under_learn_more_menu():
+    pages = {
+        "https://demo.com": """
+            <html><body>
+              <nav>
+                <a href="/learn-more">了解更多</a>
+              </nav>
+            </body></html>
+        """,
+        "https://demo.com/learn-more": """
+            <html><body>
+              <nav>
+                <a href="/learn-more/about-landbond">关于联邦</a>
+                <a href="/learn-more/news">新闻动态</a>
+              </nav>
+            </body></html>
+        """,
+        "https://demo.com/learn-more/about-landbond": """
+            <html><body>
+              <div>首页 &gt; 了解更多 &gt; 关于我们</div>
+              <h1>联邦家私</h1>
+              <p>成立于1984年，提供一站到家的生活美学全案交付服务。</p>
+            </body></html>
+        """,
+    }
+    visited = []
+
+    def fake_get(url, timeout, headers):
+        visited.append(url)
+        return FakeResponse(pages[url])
+
+    crawler = WebsiteCrawler(http_get=fake_get, max_pages=6, max_depth=3, min_text_length=10)
+
+    result = crawler.crawl("https://demo.com")
+
+    assert result.success is True
+    assert "一站到家的生活美学全案交付服务" in result.text
+    assert "https://demo.com/learn-more/about-landbond" in result.visited_urls
+    assert "https://demo.com/learn-more/news" not in visited
+
+
+def test_website_crawler_ignores_footer_links_when_discovering_candidates():
+    pages = {
+        "https://demo.com": """
+            <html><body>
+              <main>
+                <a href="/learn-more">了解更多</a>
+              </main>
+              <footer>
+                <a href="/footer/about">关于联邦</a>
+                <a href="/stores">所有门店</a>
+                <a href="/materials">素材中心</a>
+              </footer>
+            </body></html>
+        """,
+        "https://demo.com/learn-more": """
+            <html><body>
+              <a href="/learn-more/about-landbond">关于联邦</a>
+            </body></html>
+        """,
+        "https://demo.com/learn-more/about-landbond": """
+            <html><body>
+              <h1>关于我们</h1>
+              <p>公司专注家居产品研发、制造和销售。</p>
+            </body></html>
+        """,
+    }
+    visited = []
+
+    def fake_get(url, timeout, headers):
+        visited.append(url)
+        return FakeResponse(pages[url])
+
+    crawler = WebsiteCrawler(http_get=fake_get, max_pages=6, max_depth=3, min_text_length=10)
+
+    result = crawler.crawl("https://demo.com")
+
+    assert result.success is True
+    assert "家居产品研发、制造和销售" in result.text
+    assert "https://demo.com/footer/about" not in visited
+    assert "https://demo.com/stores" not in visited
+    assert "https://demo.com/materials" not in visited
