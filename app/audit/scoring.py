@@ -21,6 +21,7 @@ def score_rule_group(
     category: str,
     subcategory: str,
     business_scope: str,
+    stage: str = "",
 ) -> tuple[int, list[str]]:
     """计算某个分类组合与当前记录的匹配分。"""
     if not rules:

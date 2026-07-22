@@ -9,3 +9,4 @@ jinja2
 pytest
 httpx
 beautifulsoup4
+crawl4ai

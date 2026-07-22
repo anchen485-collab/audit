@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 import logging
 import re
+import threading
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -330,3 +332,203 @@ class WebsiteCrawler:
     def _is_discovery_link(label: str, url: str) -> bool:
         text = f"{label} {url}".lower()
         return any(word.lower() in text for word in DISCOVERY_WORDS)
+
+
+class Crawl4AIWebsiteCrawler:
+    """使用 Crawl4AI 作为浏览器级官网爬取适配器。"""
+
+    def __init__(
+        self,
+        max_pages: int = 4,
+        max_depth: int = 2,
+        timeout: int = 8,
+        min_text_length: int = 20,
+        max_text_length: int = 12000,
+    ):
+        self.max_pages = max_pages
+        self.max_depth = max_depth
+        self.timeout = timeout
+        self.min_text_length = min_text_length
+        self.max_text_length = max_text_length
+
+    def crawl(self, url: str) -> WebsiteCrawlResult:
+        """通过 Crawl4AI 抓取动态官网内容，并返回项目内统一结果对象。"""
+        normalized_url = WebsiteCrawler._normalize_start_url(url)
+        if not normalized_url:
+            logger.warning("crawl4ai_crawl_invalid_url 官网链接格式异常 url=%s", url)
+            return WebsiteCrawlResult(success=False, url=url, error="官网链接格式异常")
+
+        logger.info(
+            "crawl4ai_crawl_start Crawl4AI 官网爬取开始 url=%s max_pages=%s max_depth=%s timeout=%s",
+            normalized_url,
+            self.max_pages,
+            self.max_depth,
+            self.timeout,
+        )
+        try:
+            return self._run_async(lambda: self._crawl_async(normalized_url))
+        except ImportError as exc:
+            logger.warning("crawl4ai_crawl_missing_dependency Crawl4AI 未安装 url=%s error=%s", normalized_url, exc)
+            return WebsiteCrawlResult(success=False, url=normalized_url, error="Crawl4AI 未安装或未完成浏览器初始化")
+        except Exception as exc:
+            logger.warning("crawl4ai_crawl_failed Crawl4AI 官网爬取失败 url=%s error=%s", normalized_url, exc)
+            return WebsiteCrawlResult(success=False, url=normalized_url, error=f"Crawl4AI 官网爬取失败：{exc}")
+
+    async def _crawl_async(self, normalized_url: str) -> WebsiteCrawlResult:
+        from crawl4ai import AsyncWebCrawler
+        from crawl4ai.async_configs import BrowserConfig, CacheMode, CrawlerRunConfig
+        from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+
+        browser_config = BrowserConfig(headless=True)
+        run_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            deep_crawl_strategy=BFSDeepCrawlStrategy(
+                max_depth=self.max_depth,
+                include_external=False,
+                max_pages=self.max_pages,
+            ),
+            exclude_external_links=True,
+            remove_overlay_elements=True,
+            process_iframes=True,
+            page_timeout=self.timeout * 1000,
+        )
+
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            raw_results = await crawler.arun(url=normalized_url, config=run_config)
+
+        results = raw_results if isinstance(raw_results, list) else [raw_results]
+        visited_urls: list[str] = []
+        evidence_texts: list[str] = []
+
+        for index, result in enumerate(results[: self.max_pages]):
+            result_url = getattr(result, "url", normalized_url)
+            if result_url:
+                visited_urls.append(result_url)
+            if not getattr(result, "success", False):
+                continue
+
+            text = self._result_text(result)
+            if not text:
+                continue
+            if index == 0 or self._is_target_result(result_url, text):
+                evidence_texts.append(text)
+
+        if not evidence_texts:
+            evidence_texts = [self._result_text(result) for result in results[: self.max_pages] if getattr(result, "success", False)]
+
+        text = WebsiteCrawler._compact_text(" ".join(evidence_texts))[: self.max_text_length]
+        if len(text) < self.min_text_length:
+            error = self._first_error(results) or "官网证据不足"
+            logger.warning(
+                "crawl4ai_crawl_insufficient_evidence Crawl4AI 官网证据不足 url=%s visited_count=%s text_length=%s error=%s",
+                normalized_url,
+                len(visited_urls),
+                len(text),
+                error,
+            )
+            return WebsiteCrawlResult(success=False, url=normalized_url, text=text, visited_urls=visited_urls, error=error)
+
+        logger.info(
+            "crawl4ai_crawl_success Crawl4AI 官网爬取成功 url=%s visited_count=%s text_length=%s",
+            normalized_url,
+            len(visited_urls),
+            len(text),
+        )
+        return WebsiteCrawlResult(success=True, url=normalized_url, text=text, visited_urls=visited_urls)
+
+    @staticmethod
+    def _run_async(coro_factory):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro_factory())
+
+        result = {}
+
+        def runner():
+            try:
+                result["value"] = asyncio.run(coro_factory())
+            except Exception as exc:  # pragma: no cover - re-raised in caller thread
+                result["error"] = exc
+
+        thread = threading.Thread(target=runner, daemon=True)
+        thread.start()
+        thread.join()
+        if "error" in result:
+            raise result["error"]
+        return result["value"]
+
+    @staticmethod
+    def _result_text(result) -> str:
+        markdown = getattr(result, "markdown", "")
+        if hasattr(markdown, "fit_markdown") and markdown.fit_markdown:
+            return WebsiteCrawler._compact_text(markdown.fit_markdown)
+        if hasattr(markdown, "raw_markdown") and markdown.raw_markdown:
+            return WebsiteCrawler._compact_text(markdown.raw_markdown)
+        if isinstance(markdown, str) and markdown:
+            return WebsiteCrawler._compact_text(markdown)
+        cleaned_html = getattr(result, "cleaned_html", "") or getattr(result, "html", "")
+        if cleaned_html:
+            return WebsiteCrawler().extract_text(cleaned_html)
+        return ""
+
+    @staticmethod
+    def _is_target_result(url: str, text: str) -> bool:
+        priority_index = {name: index for index, name in enumerate(TARGET_MODULES)}
+        return WebsiteCrawler._target_priority(text[:500], url, priority_index) is not None
+
+    @staticmethod
+    def _first_error(results) -> str:
+        for result in results:
+            error = getattr(result, "error_message", "") or getattr(result, "error", "")
+            if error:
+                return str(error)
+        return ""
+
+
+class HybridWebsiteCrawler:
+    """先使用轻量爬虫，失败时自动兜底到 Crawl4AI。"""
+
+    def __init__(self, primary: WebsiteCrawler, fallback: Crawl4AIWebsiteCrawler):
+        self.primary = primary
+        self.fallback = fallback
+        self.max_pages = primary.max_pages
+        self.max_depth = primary.max_depth
+        self.timeout = primary.timeout
+        self.min_text_length = primary.min_text_length
+        self.max_text_length = primary.max_text_length
+
+    def crawl(self, url: str) -> WebsiteCrawlResult:
+        primary_result = self.primary.crawl(url)
+        if primary_result.success or not self._should_fallback(primary_result):
+            return primary_result
+
+        logger.info(
+            "website_crawl_fallback_to_crawl4ai 轻量爬虫失败，切换 Crawl4AI url=%s error=%s",
+            primary_result.url,
+            primary_result.error,
+        )
+        fallback_result = self.fallback.crawl(url)
+        if fallback_result.success:
+            fallback_result.visited_urls = self._merge_urls(primary_result.visited_urls, fallback_result.visited_urls)
+            return fallback_result
+
+        return WebsiteCrawlResult(
+            success=False,
+            url=fallback_result.url or primary_result.url,
+            text=fallback_result.text or primary_result.text,
+            visited_urls=self._merge_urls(primary_result.visited_urls, fallback_result.visited_urls),
+            error=f"{primary_result.error}；Crawl4AI 兜底失败：{fallback_result.error}",
+        )
+
+    @staticmethod
+    def _should_fallback(result: WebsiteCrawlResult) -> bool:
+        return result.error != "官网链接格式异常"
+
+    @staticmethod
+    def _merge_urls(first: list[str], second: list[str]) -> list[str]:
+        merged: list[str] = []
+        for url in [*first, *second]:
+            if url and url not in merged:
+                merged.append(url)
+        return merged

@@ -5,7 +5,7 @@ from pathlib import Path
 from app.company.mock_provider import MockCompanyInfoProvider
 from app.company.provider import CompanyInfoProvider
 from app.company.qichacha_provider import QichachaCompanyInfoProvider
-from app.company.website_crawler import WebsiteCrawler
+from app.company.website_crawler import Crawl4AIWebsiteCrawler, HybridWebsiteCrawler, WebsiteCrawler
 from app.company.website_provider import WebsiteCompanyInfoProvider
 from app.core.config import ensure_storage_dirs, load_env_file
 
@@ -20,14 +20,11 @@ def get_company_provider() -> CompanyInfoProvider:
     logger.info("company_provider_select 企业信息源选择 provider=%s", provider_name)
     if provider_name == "website":
         paths = ensure_storage_dirs()
-        crawler = WebsiteCrawler(
-            max_pages=int(os.getenv("WEBSITE_CRAWL_MAX_PAGES", "4")),
-            max_depth=int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "2")),
-            timeout=int(os.getenv("WEBSITE_CRAWL_TIMEOUT", "8")),
-        )
+        crawler = _build_website_crawler()
         cache_path = Path(os.getenv("WEBSITE_CACHE_PATH") or paths["cache"] / "website_cache.json")
         logger.info(
-            "company_provider_website_ready 官网信息源已就绪 max_pages=%s max_depth=%s timeout=%s cache_path=%s",
+            "company_provider_website_ready 官网信息源已就绪 crawler=%s max_pages=%s max_depth=%s timeout=%s cache_path=%s",
+            crawler.__class__.__name__,
             crawler.max_pages,
             crawler.max_depth,
             crawler.timeout,
@@ -37,3 +34,21 @@ def get_company_provider() -> CompanyInfoProvider:
     if provider_name == "qichacha":
         return QichachaCompanyInfoProvider()
     return MockCompanyInfoProvider()
+
+
+def _build_website_crawler():
+    max_pages = int(os.getenv("WEBSITE_CRAWL_MAX_PAGES", "4"))
+    max_depth = int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "2"))
+    timeout = int(os.getenv("WEBSITE_CRAWL_TIMEOUT", "8"))
+    engine = os.getenv("WEBSITE_CRAWLER_ENGINE", "requests").strip().lower()
+
+    if engine == "crawl4ai":
+        return Crawl4AIWebsiteCrawler(max_pages=max_pages, max_depth=max_depth, timeout=timeout)
+    if engine == "hybrid":
+        return HybridWebsiteCrawler(
+            primary=WebsiteCrawler(max_pages=max_pages, max_depth=max_depth, timeout=timeout),
+            fallback=Crawl4AIWebsiteCrawler(max_pages=max_pages, max_depth=max_depth, timeout=timeout),
+        )
+    if engine != "requests":
+        logger.warning("company_provider_unknown_crawler_engine 未知官网爬虫引擎 engine=%s，回退 requests", engine)
+    return WebsiteCrawler(max_pages=max_pages, max_depth=max_depth, timeout=timeout)
