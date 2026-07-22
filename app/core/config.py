@@ -43,3 +43,21 @@ def ensure_storage_dirs() -> dict[str, Path]:
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True)
     return paths
+
+
+def get_category_rules_json_path() -> Path:
+    """读取分类规则 JSON 路径；默认放在 storage 根目录下。"""
+    load_env_file()
+    configured_path = os.getenv("CATEGORY_RULES_JSON_PATH")
+    if configured_path:
+        return Path(configured_path).resolve()
+    return (get_storage_dir() / "category_rules.json").resolve()
+
+
+def get_category_rules_excel_path() -> Path | None:
+    """读取分类表 Excel 源文件路径；为空时表示不自动生成 JSON。"""
+    load_env_file()
+    configured_path = os.getenv("CATEGORY_RULES_EXCEL_PATH")
+    if not configured_path:
+        return None
+    return Path(configured_path).resolve()

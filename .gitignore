@@ -6,10 +6,12 @@ __pycache__/
 .env
 .env.*
 !.env.example
+docs/*.xlsx
 
 storage/uploads/*
 storage/outputs/*
 storage/cache/*
+storage/category_rules.json
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep
 !storage/cache/.gitkeep

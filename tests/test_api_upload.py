@@ -23,20 +23,21 @@ def build_category_file(path: Path):
     wb.save(path)
 
 
-def test_upload_two_excels_returns_download_link(tmp_path, monkeypatch):
+def test_upload_employee_excel_returns_download_link_with_configured_category_rules(tmp_path, monkeypatch):
     monkeypatch.setenv("AUDIT_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("CATEGORY_RULES_JSON_PATH", str(tmp_path / "category_rules.json"))
     employee_file = tmp_path / "employee.xlsx"
     category_file = tmp_path / "category.xlsx"
     build_employee_file(employee_file)
     build_category_file(category_file)
+    monkeypatch.setenv("CATEGORY_RULES_EXCEL_PATH", str(category_file))
 
     client = TestClient(app)
-    with employee_file.open("rb") as employee_fp, category_file.open("rb") as category_fp:
+    with employee_file.open("rb") as employee_fp:
         response = client.post(
             "/audit/upload",
             files={
                 "employee_file": ("employee.xlsx", employee_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-                "category_file": ("category.xlsx", category_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             },
         )
 
@@ -46,6 +47,7 @@ def test_upload_two_excels_returns_download_link(tmp_path, monkeypatch):
 
 def test_upload_with_invalid_employee_headers_returns_error_page(tmp_path, monkeypatch):
     monkeypatch.setenv("AUDIT_STORAGE_DIR", str(tmp_path / "storage"))
+    monkeypatch.setenv("CATEGORY_RULES_JSON_PATH", str(tmp_path / "category_rules.json"))
     employee_file = tmp_path / "employee.xlsx"
     category_file = tmp_path / "category.xlsx"
 
@@ -55,14 +57,14 @@ def test_upload_with_invalid_employee_headers_returns_error_page(tmp_path, monke
     ws.append(["金川县雪梨果业开发有限责任公司"])
     wb.save(employee_file)
     build_category_file(category_file)
+    monkeypatch.setenv("CATEGORY_RULES_EXCEL_PATH", str(category_file))
 
     client = TestClient(app)
-    with employee_file.open("rb") as employee_fp, category_file.open("rb") as category_fp:
+    with employee_file.open("rb") as employee_fp:
         response = client.post(
             "/audit/upload",
             files={
                 "employee_file": ("employee.xlsx", employee_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-                "category_file": ("category.xlsx", category_fp, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             },
         )
 

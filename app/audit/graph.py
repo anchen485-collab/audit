@@ -42,27 +42,30 @@ def build_audit_graph():
 
 def run_audit_workflow(
     employee_file: str | Path,
-    category_file: str | Path,
-    output_dir: str | Path,
+    category_file: str | Path | None = None,
+    output_dir: str | Path | None = None,
     provider: CompanyInfoProvider | None = None,
     job_id: str | None = None,
 ) -> AuditGraphState:
     """运行完整审计流程，并返回最终状态。"""
+    if output_dir is None:
+        raise ValueError("必须提供审计结果输出目录")
     graph = build_audit_graph()
     initial_state: AuditGraphState = {
         "employee_file": str(employee_file),
-        "category_file": str(category_file),
         "output_dir": str(output_dir),
         "job_id": job_id or f"审计结果_{uuid4().hex[:8]}",
         "provider": provider or MockCompanyInfoProvider(),
         "errors": [],
         "steps": [],
     }
+    if category_file:
+        initial_state["category_file"] = str(category_file)
     logger.info(
-        "audit_workflow_start 审计流程开始 job_id=%s employee_file=%s category_file=%s provider=%s",
+        "audit_workflow_start 审计流程开始 job_id=%s employee_file=%s category_source=%s provider=%s",
         initial_state["job_id"],
         initial_state["employee_file"],
-        initial_state["category_file"],
+        initial_state.get("category_file") or "configured_json",
         initial_state["provider"].__class__.__name__,
     )
     final_state = graph.invoke(initial_state)

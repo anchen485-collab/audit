@@ -95,6 +95,97 @@ def test_audit_record_ignores_stage_when_scoring_category():
     assert "环节" not in result.reason
 
 
+def test_audit_record_marks_contained_entered_category_as_correct_with_notice():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月22日",
+        name="安安",
+        category="电力",
+        subcategory="发电工程",
+        company_raw="综合能源建设有限公司",
+    )
+    company = CompanyInfo(
+        query_name="综合能源建设有限公司",
+        company_name="综合能源建设有限公司",
+        business_scope="公司业务领域覆盖发电工程和输变电工程，提供电力项目建设服务。",
+        status="",
+        source="website",
+        success=True,
+        raw={"website_url": "https://example.com"},
+    )
+    rules = [
+        CategoryRule("能源服务", "电力", "发电工程", "类型", ["火力发电", "水力发电"]),
+        CategoryRule("能源服务", "电力", "输变电工程", "类型", ["输变电工程", "变电站"]),
+    ]
+
+    result = audit_record(record, rules, company)
+
+    assert result.status == "正确"
+    assert result.error_type == "补充信息提示"
+    assert result.needs_review is True
+    assert result.suggestion == ""
+    assert "发电工程" in result.reason
+    assert "信息" in result.reason
+
+
+def test_audit_record_allows_subcategory_to_be_internal_level2():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月22日",
+        name="安安",
+        category="种植业",
+        subcategory="蔬菜作物",
+        company_raw="广东永锋农产品发展有限公司",
+    )
+    company = CompanyInfo(
+        query_name="广东永锋农产品发展有限公司",
+        company_name="广东永锋农产品发展有限公司",
+        business_scope="公司专业从事蔬菜作物订单种植，包含白菜、菠菜等绿色蔬菜供应。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("种植业", "蔬菜作物", "叶菜类", "全品类", ["白菜", "菠菜", "蔬菜"]),
+        CategoryRule("种植业", "蔬菜作物", "根茎类", "全品类", ["土豆", "红薯"]),
+    ]
+
+    result = audit_record(record, rules, company)
+
+    assert result.status == "正确"
+    assert result.suggestion == ""
+    assert "蔬菜作物" in result.reason
+
+
+def test_audit_record_allows_subcategory_to_be_internal_level3():
+    record = EmployeeRecord(
+        row_number=3,
+        date="7月22日",
+        name="安安",
+        category="种植业",
+        subcategory="叶菜类",
+        company_raw="广东永锋农产品发展有限公司",
+    )
+    company = CompanyInfo(
+        query_name="广东永锋农产品发展有限公司",
+        company_name="广东永锋农产品发展有限公司",
+        business_scope="公司基地种植叶菜类绿色蔬菜，包含白菜、菠菜等产品。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("种植业", "蔬菜作物", "叶菜类", "全品类", ["白菜", "菠菜", "蔬菜"]),
+        CategoryRule("种植业", "蔬菜作物", "根茎类", "全品类", ["土豆", "红薯"]),
+    ]
+
+    result = audit_record(record, rules, company)
+
+    assert result.status == "正确"
+    assert result.suggestion == ""
+    assert "叶菜类" in result.reason
+
+
 def test_audit_record_suggests_better_category_when_scope_mismatches():
     record = EmployeeRecord(
         row_number=2,
@@ -266,3 +357,44 @@ def test_agent_cannot_mark_nonexistent_level_pair_as_correct():
     assert result.error_type == "内部分类不存在"
     assert result.needs_review is True
     assert "不能判为正确" in result.reason
+
+
+def test_agent_can_mark_existing_level3_subcategory_as_correct():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月22日",
+        name="安安",
+        category="种植业",
+        subcategory="叶菜类",
+        company_raw="测试蔬菜企业",
+    )
+    company = CompanyInfo(
+        query_name="测试蔬菜企业",
+        company_name="测试蔬菜企业",
+        business_scope="企业主营叶菜类蔬菜种植和供应。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("种植业", "蔬菜作物", "叶菜类", "全品类", ["白菜", "菠菜"]),
+        CategoryRule("种植业", "蔬菜作物", "根茎类", "全品类", ["土豆", "红薯"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="种植业",
+            matched_level2="蔬菜作物",
+            matched_level3="叶菜类",
+            audit_result="正确",
+            confidence=91,
+            reason="外部证据提到叶菜类蔬菜。",
+            suggestion="",
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "正确"
+    assert result.error_type == ""
+    assert result.needs_review is False

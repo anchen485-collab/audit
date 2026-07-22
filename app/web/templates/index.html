@@ -12,17 +12,13 @@
         <div class="masthead">
           <p class="eyebrow">Version 1.0</p>
           <h1>企业录入审计 Agent</h1>
-          <p>上传员工录入表和内部分类表，系统会完成规则审计并导出 Excel 结果。</p>
+          <p>上传员工录入表，系统会使用服务端固定分类规则完成审计并导出 Excel 结果。</p>
         </div>
 
         <form class="upload-form" action="/audit/upload" method="post" enctype="multipart/form-data">
           <label>
             <span>员工录入 Excel</span>
             <input type="file" name="employee_file" accept=".xlsx" required />
-          </label>
-          <label>
-            <span>内部分类表 Excel</span>
-            <input type="file" name="category_file" accept=".xlsx" required />
           </label>
           <button type="submit">开始审计</button>
         </form>

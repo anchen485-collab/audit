@@ -5,7 +5,7 @@
 ## 当前能力
 
 - 提供简单 Web 页面上传 Excel。
-- 支持上传员工录入表和内部分类表。
+- 支持上传员工录入表，内部分类表使用服务端固定 JSON 规则索引。
 - 使用 LangGraph 编排审计流程。
 - 使用规则匹配判断录入是否正确。
 - 使用 mock 企业经营范围模拟企查查 API。
@@ -43,6 +43,21 @@ QICHACHA_TIMEOUT=15
 ```text
 COMPANY_PROVIDER=mock
 ```
+
+内部分类表不再要求每次上传。推荐让业务人员继续维护 Excel，系统运行时读取 JSON 规则索引：
+
+```text
+CATEGORY_RULES_JSON_PATH=storage/category_rules.json
+CATEGORY_RULES_EXCEL_PATH=C:/Users/Administrator/Desktop/document/最终分类表.xlsx
+```
+
+如果 `CATEGORY_RULES_JSON_PATH` 指向的文件不存在，并且 `CATEGORY_RULES_EXCEL_PATH` 存在，系统会自动从 Excel 生成 JSON。也可以手动生成：
+
+```bash
+python scripts/build_category_rules_json.py --excel "C:/Users/Administrator/Desktop/document/最终分类表.xlsx" --json storage/category_rules.json
+```
+
+真实分类表和生成后的 `storage/category_rules.json` 都属于内部规则资产，不建议提交到 GitHub。
 
 如果暂停企查查 API，改用官网爬取模式：
 
@@ -123,16 +138,18 @@ http://127.0.0.1:8000/health
 员工录入 Excel 表头必须包含：
 
 ```text
-日期、姓名、一级分类、细分、企业名称&官网、环节
+日期、姓名、一级分类、细分、企业名称&官网
 ```
 
-内部分类表 Excel 表头必须包含：
+其中 `细分` 可以填写内部分类表中的二级品类，也可以填写三级品类；系统会自动兼容这两种录入方式。
+
+内部分类表 Excel 只在生成 JSON 规则索引时使用，表头必须包含：
 
 ```text
 一级品类、二级品类、三级品类、模块名称、子模块列表
 ```
 
-当前项目中的 `最终分类表.xlsx` 可以作为内部分类表上传。
+当前项目不会在 Web 页面中上传内部分类表；请通过 `.env` 配置固定规则路径。
 
 ## 输出结果
 
@@ -174,6 +191,7 @@ python -m pytest
 app/main.py                    FastAPI 入口
 app/audit/graph.py             LangGraph 审计流程
 app/audit/rules.py             规则审计逻辑
+app/category/rule_index.py     分类表 JSON 规则索引生成和加载
 app/excel/input_reader.py      员工录入表读取
 app/excel/category_reader.py   内部分类表读取
 app/excel/result_writer.py     审计结果导出
@@ -181,4 +199,5 @@ app/company/mock_provider.py   mock 企业信息查询
 app/company/qichacha_provider.py 企查查 API 预留实现
 storage/uploads                上传文件目录
 storage/outputs                输出结果目录
+storage/category_rules.json    本地生成的分类规则索引，不提交 GitHub
 ```

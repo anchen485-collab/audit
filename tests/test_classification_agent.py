@@ -57,7 +57,7 @@ def test_parse_agent_result_normalizes_output():
     assert result.needs_review is False
 
 
-def test_classification_agent_prompt_only_requires_level1_and_level2():
+def test_classification_agent_prompt_allows_subcategory_to_be_level2_or_level3():
     client = CaptureChatClient()
     agent = ClassificationAgent(client)
     record = EmployeeRecord(
@@ -82,12 +82,12 @@ def test_classification_agent_prompt_only_requires_level1_and_level2():
     user_prompt = client.messages[1]["content"]
 
     assert result.audit_result == "正确"
-    assert "只判断一级品类和二级品类" in user_prompt
+    assert "细分可能是内部二级品类，也可能是内部三级品类" in user_prompt
     assert "环节不作为判断正确或错误的标准" in user_prompt
     assert "当前环节" not in user_prompt
     assert '"matched_level1"' in user_prompt
     assert '"matched_level2"' in user_prompt
-    assert '"matched_level3"' not in user_prompt
+    assert '"matched_level3"' in user_prompt
 
 
 def test_format_category_rules_for_agent_filters_stage_module():

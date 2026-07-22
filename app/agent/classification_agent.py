@@ -86,9 +86,9 @@ class ClassificationAgent:
                 "role": "system",
                 "content": (
                     "你是企业分类审计 Agent。你只能根据用户提供的内部分类表和外部证据文本判断，"
-                    "只判断一级品类和二级品类是否正确，不需要判断三级品类。"
+                    "判断员工录入的一级分类和细分是否正确；细分可能是内部二级品类，也可能是内部三级品类。"
                     "不要把员工录入的环节作为判断正确或错误的标准。"
-                    "必须从内部分类表已有一级、二级类目中选择，不允许编造新分类。"
+                    "必须从内部分类表已有一级、二级、三级类目中选择，不允许编造新分类。"
                     "如果证据不足以确定，请返回 audit_result=疑似错误 或 无法判断，并说明原因。"
                     "只输出 JSON，不要输出 Markdown。"
                 ),
@@ -173,13 +173,13 @@ def parse_agent_result(data: dict[str, Any]) -> AgentClassificationResult:
 def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_text: str, evidence_text: str) -> str:
     return f"""
 请基于“内部分类表”和“外部证据文本”判断员工录入分类是否正确。
-只判断一级品类和二级品类，不要判断三级品类；三级品类和模块关键词只作为理解二级品类边界的参考。
+员工录入的细分可能是内部二级品类，也可能是内部三级品类；请结合内部分类表判断它命中哪一级。
 员工录入的环节不作为判断正确或错误的标准，不要因为环节不一致判错。
 
 员工录入：
 - 企业名称：{record.company_name or record.company_raw}
 - 当前一级分类：{record.category}
-- 当前二级分类：{record.subcategory}
+- 当前细分：{record.subcategory}
 
 企查查/官网企业名称：{company.company_name}
 数据来源：{company.source}
@@ -194,12 +194,13 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
 {{
   "matched_level1": "从内部分类表选择的一级品类",
   "matched_level2": "从内部分类表选择的二级品类",
-  "matched_module": "用于支持二级品类判断的模块名称；没有则为空",
+  "matched_level3": "从内部分类表选择的三级品类；如果员工细分只命中二级或无法确定则为空",
+  "matched_module": "用于支持分类判断的模块名称；没有则为空",
   "matched_keywords": ["命中的内部分类表关键词"],
   "audit_result": "正确/错误/疑似错误/无法判断",
   "confidence": 0-100,
   "reason": "用外部证据解释判断依据",
-  "suggestion": "如果当前一级或二级录入不正确，只给出 一级品类 / 二级品类；否则为空",
+  "suggestion": "如果当前一级分类或细分录入不正确，给出 一级品类 / 二级品类 或 一级品类 / 二级品类 / 三级品类；否则为空",
   "needs_review": true/false
 }}
 """.strip()

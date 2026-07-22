@@ -50,3 +50,29 @@ def test_run_audit_workflow_exports_result_excel(tmp_path):
     assert "数据来源" in headers
     assert "官网链接" in headers
     assert "外部证据文本" in headers
+
+
+def test_run_audit_workflow_loads_category_rules_from_config(tmp_path, monkeypatch):
+    employee_file = tmp_path / "employee.xlsx"
+    category_file = tmp_path / "category.xlsx"
+    output_dir = tmp_path / "outputs"
+    json_path = tmp_path / "category_rules.json"
+    build_employee_file(employee_file)
+    build_category_file(category_file)
+    monkeypatch.setenv("CATEGORY_RULES_EXCEL_PATH", str(category_file))
+    monkeypatch.setenv("CATEGORY_RULES_JSON_PATH", str(json_path))
+
+    provider = MockCompanyInfoProvider(
+        {
+            "金川县雪梨果业开发有限责任公司": {
+                "business_scope": "梨、水果种植、加工、销售。",
+                "status": "存续",
+            }
+        }
+    )
+
+    state = run_audit_workflow(employee_file=employee_file, output_dir=output_dir, provider=provider)
+
+    assert json_path.exists()
+    assert state["output_path"]
+    assert Path(state["output_path"]).exists()

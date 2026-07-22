@@ -4,9 +4,9 @@ from pathlib import Path
 from app.agent import build_classification_agent_from_env
 from app.audit.rules import audit_record, clean_company_name
 from app.audit.summary import build_person_summary
+from app.category.rule_index import load_category_rules_from_config
 from app.company.provider import CompanyInfoProvider
 from app.core.models import AuditGraphState
-from app.excel.category_reader import read_category_rules
 from app.excel.input_reader import read_employee_excel
 from app.excel.result_writer import write_audit_result_excel
 
@@ -21,8 +21,9 @@ def read_employee_node(state: AuditGraphState) -> AuditGraphState:
 
 
 def read_category_node(state: AuditGraphState) -> AuditGraphState:
-    rules = read_category_rules(state["category_file"])
-    logger.info("audit_read_category_done 分类规则读取完成 file=%s rule_count=%s", state["category_file"], len(rules))
+    category_source = state.get("category_file")
+    rules = load_category_rules_from_config(category_source)
+    logger.info("audit_read_category_done 分类规则读取完成 source=%s rule_count=%s", category_source or "configured_json", len(rules))
     return {"rules": rules, "steps": state.get("steps", []) + [f"读取分类规则 {len(rules)} 条"]}
 
 

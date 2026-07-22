@@ -37,34 +37,27 @@ def index(request: Request):
 async def upload_audit_files(
     request: Request,
     employee_file: UploadFile = File(...),
-    category_file: UploadFile = File(...),
 ):
-    """接收两份 Excel，执行审计并返回下载链接。"""
+    """接收员工录入 Excel，使用服务端固定分类规则执行审计。"""
     _validate_xlsx(employee_file)
-    _validate_xlsx(category_file)
     job_id = f"审计结果_{uuid4().hex[:8]}"
     logger.info(
-        "audit_upload_start 审计上传开始 job_id=%s employee_file=%s category_file=%s",
+        "audit_upload_start 审计上传开始 job_id=%s employee_file=%s category_source=configured_json",
         job_id,
         employee_file.filename,
-        category_file.filename,
     )
 
     try:
         paths = ensure_storage_dirs()
         employee_path = paths["uploads"] / f"{job_id}_employee.xlsx"
-        category_path = paths["uploads"] / f"{job_id}_category.xlsx"
         employee_path.write_bytes(await employee_file.read())
-        category_path.write_bytes(await category_file.read())
         logger.info(
-            "audit_upload_saved 上传文件已保存 job_id=%s employee_path=%s category_path=%s",
+            "audit_upload_saved 上传文件已保存 job_id=%s employee_path=%s",
             job_id,
             employee_path,
-            category_path,
         )
         state = run_audit_workflow(
             employee_file=employee_path,
-            category_file=category_path,
             output_dir=paths["outputs"],
             provider=get_company_provider(),
             job_id=job_id,

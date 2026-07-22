@@ -79,7 +79,7 @@ def audit_record(
 
     for key, group in grouped.items():
         score, evidence = score_rule_group(group, record.category, record.subcategory, business_scope)
-        if key[1] == record.category and key[2] == record.subcategory:
+        if _matches_entered_category_path(key, record.category, record.subcategory) and score > current_score:
             current_key = key
             current_score = score
             current_evidence = evidence
@@ -116,6 +116,18 @@ def audit_record(
                 exc,
             )
 
+    contained_categories = _contained_entered_categories(record, business_scope)
+    if current_key and contained_categories:
+        result.status = "正确"
+        result.confidence = max(current_score, 70)
+        result.error_type = "补充信息提示"
+        result.reason = (
+            f"官网证据包含员工录入分类：{'、'.join(contained_categories)}；"
+            "官网证据可能同时覆盖其他业务方向，建议补充企业主营信息或人工确认"
+        )
+        result.needs_review = True
+        return result
+
     if current_key and current_score >= 80:
         result.status = "正确"
         result.confidence = current_score
@@ -140,12 +152,47 @@ def audit_record(
     return result
 
 
+def _contained_entered_categories(record: EmployeeRecord, business_scope: str) -> list[str]:
+    """判断官网证据是否直接包含员工录入的分类名称。"""
+    if not record.subcategory or record.subcategory not in business_scope:
+        return []
+    entered_categories = [record.category, record.subcategory]
+    return [name for name in entered_categories if name and name in business_scope]
+
+
+def _matches_entered_category_path(key: tuple[str, str, str], category: str, subcategory: str) -> bool:
+    """判断员工录入的一级分类和细分是否命中内部分类路径。"""
+    level1, level2, level3 = key
+    if category == level1 and subcategory in {level2, level3}:
+        return True
+    # 兼容历史数据：旧模板里“一级分类”可能实际填写的是内部二级品类。
+    return category == level2 and subcategory == level3
+
+
+def _entered_category_path_exists(grouped: dict[tuple[str, str, str], list[CategoryRule]], category: str, subcategory: str) -> bool:
+    """判断员工录入分类是否存在于内部分类表任一层级路径中。"""
+    return any(_matches_entered_category_path(key, category, subcategory) for key in grouped)
+
+
+def _agent_category_path_exists(
+    grouped: dict[tuple[str, str, str], list[CategoryRule]],
+    level1: str,
+    level2: str,
+    level3: str = "",
+) -> bool:
+    """判断大模型返回的内部分类路径是否存在。"""
+    if level3:
+        return any(key == (level1, level2, level3) for key in grouped)
+    return any(key[0] == level1 and key[1] == level2 for key in grouped)
+
+
 def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[str, str, str], list[CategoryRule]]) -> AuditResult:
     matched_level1 = agent_result.matched_level1
     matched_level2 = agent_result.matched_level2
-    matched_text = " / ".join(part for part in [matched_level1, matched_level2] if part)
-    matched_key_exists = _level_pair_exists(grouped, matched_level1, matched_level2)
-    current_key_exists = _level_pair_exists(grouped, result.original_category, result.original_subcategory)
+    matched_level3 = getattr(agent_result, "matched_level3", "")
+    matched_text = " / ".join(part for part in [matched_level1, matched_level2, matched_level3] if part)
+    matched_key_exists = _agent_category_path_exists(grouped, matched_level1, matched_level2, matched_level3)
+    current_key_exists = _entered_category_path_exists(grouped, result.original_category, result.original_subcategory)
 
     result.confidence = agent_result.confidence
     result.reason = f"大模型语义判断：{agent_result.reason}" if agent_result.reason else "大模型语义判断"
@@ -194,10 +241,6 @@ def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[s
     result.suggestion = _level1_level2_suggestion(agent_result.suggestion, matched_text)
     result.needs_review = True
     return result
-
-
-def _level_pair_exists(grouped: dict[tuple[str, str, str], list[CategoryRule]], level1: str, level2: str) -> bool:
-    return any(key[0] == level1 and key[1] == level2 for key in grouped)
 
 
 def _level1_level2_suggestion(suggestion: str, fallback: str = "") -> str:
