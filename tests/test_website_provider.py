@@ -48,6 +48,24 @@ def test_website_provider_returns_company_info_from_crawled_text():
     assert info.raw["cleaning"]["cleaned_length"] > 0
 
 
+def test_website_provider_keeps_raw_text_when_cleaner_drops_english_evidence():
+    crawler = FakeCrawler(
+        WebsiteCrawlResult(
+            success=True,
+            url="https://demo.com",
+            text="图索科技（上海）有限公司 From Source to Sea Protection and restoration of fish migration in river",
+            visited_urls=["https://demo.com"],
+        )
+    )
+    provider = WebsiteCompanyInfoProvider(crawler=crawler)
+
+    info = provider.get_company_info_for_record(build_record())
+
+    assert info.success is True
+    assert "From Source to Sea" in info.business_scope
+    assert info.raw["cleaning"]["fallback_to_raw_text"] is True
+
+
 def test_website_provider_returns_clear_error_when_url_missing():
     provider = WebsiteCompanyInfoProvider()
 
@@ -107,6 +125,47 @@ def test_website_provider_recleans_stale_cache_before_returning(tmp_path):
     assert "主营蔬菜种植、加工、销售" in info.business_scope
     assert "联系我们" not in info.business_scope
     assert info.raw["cleaning"]["version"] == provider.text_cleaner.CLEANING_VERSION
+
+
+def test_website_provider_repairs_mojibake_success_cache_before_returning(tmp_path):
+    cache_path = tmp_path / "website_cache.json"
+    cache_path.write_text(
+        """
+        {
+          "https://demo.com": {
+            "query_name": "图索科技（上海）有限公司",
+            "company_name": "图索科技（上海）有限公司",
+            "business_scope": "鍥剧储绉戞妧锛堜笂娴凤級鏈夐檺鍏徃 From Source to Sea Protection and restoration of fish migration in river",
+            "status": "",
+            "source": "website",
+            "success": true,
+            "error": "",
+            "raw": {
+              "website_url": "https://demo.com",
+              "visited_urls": ["https://demo.com"],
+              "raw_crawl_text": "鍥剧储绉戞妧锛堜笂娴凤級鏈夐檺鍏徃 From Source to Sea Protection and restoration of fish migration in river",
+              "cleaning": {
+                "version": 4,
+                "original_length": 95,
+                "cleaned_length": 95,
+                "kept_fragment_count": 1,
+                "dropped_fragment_count": 0
+              }
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    crawler = FakeCrawler(WebsiteCrawlResult(success=True, url="https://demo.com", text="不应该重新爬取", visited_urls=[]))
+    provider = WebsiteCompanyInfoProvider(crawler=crawler, cache_path=cache_path)
+
+    info = provider.get_company_info_for_record(build_record())
+
+    assert crawler.urls == []
+    assert "图索科技（上海）有限公司" in info.business_scope
+    assert "鍥剧储绉戞妧" not in info.business_scope
+    assert info.raw["cleaning"]["fallback_to_raw_text"] is True
 
 
 def test_website_provider_ignores_failed_cache_and_recrawls(tmp_path):

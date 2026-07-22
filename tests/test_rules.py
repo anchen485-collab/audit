@@ -260,6 +260,44 @@ def test_audit_record_can_use_classification_agent_result():
     assert result.needs_review is False
 
 
+def test_audit_record_calls_classification_agent_when_website_evidence_is_english():
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="信息科技",
+            matched_level2="软件服务",
+            audit_result="正确",
+            confidence=82,
+            reason="英文官网证据可支持分类。",
+            needs_review=False,
+        )
+    )
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="张冰冰",
+        category="信息科技",
+        subcategory="软件服务",
+        company_raw="图索科技（上海）有限公司",
+        website_url="https://demo.com",
+    )
+    company = CompanyInfo(
+        query_name="图索科技（上海）有限公司",
+        company_name="图索科技（上海）有限公司",
+        business_scope="From Source to Sea Protection and restoration of fish migration in river",
+        status="",
+        source="website",
+        success=True,
+        raw={"website_url": "https://demo.com"},
+    )
+    rules = [CategoryRule("信息科技", "软件服务", "生态监测", "类型", ["数据平台"])]
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert agent.calls
+    assert result.status == "正确"
+    assert "大模型语义判断" in result.reason
+
+
 def test_audit_record_trims_agent_suggestion_to_level1_and_level2():
     record = EmployeeRecord(
         row_number=2,

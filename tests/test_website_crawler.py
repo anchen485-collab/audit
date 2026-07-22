@@ -86,6 +86,31 @@ def test_website_crawler_decodes_utf8_page_when_header_encoding_is_wrong():
     assert "é»" not in fetched_html
 
 
+def test_website_crawler_repairs_utf8_text_decoded_as_gb18030_mojibake():
+    html = "<html><body><p>图索科技（上海）有限公司 From Source to Sea Protection and restoration of fish migration in river</p></body></html>"
+    response = FakeEncodedResponse(
+        content=html.encode("utf-8"),
+        encoding="gb18030",
+        apparent_encoding="gb18030",
+    )
+    crawler = WebsiteCrawler(http_get=lambda url, timeout, headers: response)
+
+    fetched_html = crawler._fetch("https://demo.com")
+
+    assert "图索科技（上海）有限公司" in fetched_html
+    assert "鍥剧储绉戞妧" not in fetched_html
+
+
+def test_website_crawler_repairs_mojibake_when_extracting_text():
+    html = "<html><body><p>图索科技（上海）有限公司 From Source to Sea</p></body></html>"
+    mojibake_html = html.encode("utf-8").decode("gb18030", errors="replace")
+
+    text = WebsiteCrawler().extract_text(mojibake_html)
+
+    assert "图索科技（上海）有限公司" in text
+    assert "鍥剧储绉戞妧" not in text
+
+
 def test_website_crawler_uses_browser_headers_and_retries_https_after_403():
     calls = []
 

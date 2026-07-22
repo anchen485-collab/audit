@@ -294,7 +294,8 @@ class WebsiteCrawler:
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup.find_all(["script", "style", "nav", "footer", "header", "noscript", "a"]):
             tag.extract()
-        return self._compact_text(soup.get_text(" ", strip=True))
+        text = self._compact_text(soup.get_text(" ", strip=True))
+        return self._repair_mojibake(text) or text
 
     def _fetch(self, url: str) -> str:
         response = self._http_get(url)
@@ -347,6 +348,7 @@ class WebsiteCrawler:
                     text = bytes(content).decode(encoding, errors="replace")
                 except LookupError:
                     continue
+                text = WebsiteCrawler._repair_mojibake(text) or text
                 score = WebsiteCrawler._text_quality_score(text)
                 if score > 0 and not WebsiteCrawler._looks_mojibake(text):
                     return text
@@ -383,30 +385,60 @@ class WebsiteCrawler:
     def _text_quality_score(text: str) -> int:
         """给解码结果打分：中文越多越好，乱码特征越多越差。"""
         chinese_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
-        mojibake_count = sum(text.count(marker) for marker in ["Ã", "Â", "�", "é", "å", "ç", "è", "\\x"])
+        mojibake_count = sum(text.count(marker) for marker in WebsiteCrawler._mojibake_markers())
         return chinese_count * 2 - mojibake_count * 5
 
     @staticmethod
     def _repair_mojibake(text: str) -> str:
-        """兜底修复已经被 Latin-1 解错的 UTF-8 文本。"""
+        """兜底修复已经被 Latin-1 或 GB18030 解错的 UTF-8 文本。"""
         if not WebsiteCrawler._looks_mojibake(text):
             return ""
-        try:
-            repaired = text.encode("latin1").decode("utf-8")
-        except UnicodeError:
-            return ""
-        if WebsiteCrawler._text_quality_score(repaired) > WebsiteCrawler._text_quality_score(text):
-            return repaired
+        # 有些官网实际是 UTF-8，但响应头/探测结果会让 requests 按 GB18030 解码，形成“鍥剧储...”这类乱码。
+        for source_encoding in ["latin1", "gb18030", "gbk"]:
+            try:
+                repaired = text.encode(source_encoding).decode("utf-8")
+            except UnicodeError:
+                continue
+            if WebsiteCrawler._text_quality_score(repaired) > WebsiteCrawler._text_quality_score(text):
+                return repaired
         return ""
 
     @staticmethod
     def _looks_mojibake(text: str) -> bool:
         """判断文本是否存在常见的中文乱码特征。"""
-        return any(marker in text for marker in ["Ã", "Â", "�", "é", "å", "ç", "è", "\\x"])
+        return any(marker in text for marker in WebsiteCrawler._mojibake_markers())
+
+    @staticmethod
+    def _mojibake_markers() -> list[str]:
+        """常见乱码标记，覆盖 Latin-1 误解码和 GB18030 误解码两类场景。"""
+        return [
+            "Ã",
+            "Â",
+            "�",
+            "é",
+            "å",
+            "ç",
+            "è",
+            "\\x",
+            "鍥",
+            "绉",
+            "妧",
+            "锛",
+            "鏈",
+            "檺",
+            "徃",
+            "級",
+        ]
 
     @staticmethod
     def _compact_text(text: str) -> str:
         return re.sub(r"\s+", " ", text or "").strip()
+
+    @staticmethod
+    def _repair_compacted_text(text: str) -> str:
+        """先压缩空白，再兜底修复可能已经形成的中文乱码。"""
+        compacted = WebsiteCrawler._compact_text(text)
+        return WebsiteCrawler._repair_mojibake(compacted) or compacted
 
     @staticmethod
     def _normalize_start_url(url: str) -> str:
@@ -632,11 +664,11 @@ class Crawl4AIWebsiteCrawler:
     def _result_text(result) -> str:
         markdown = getattr(result, "markdown", "")
         if hasattr(markdown, "fit_markdown") and markdown.fit_markdown:
-            return WebsiteCrawler._compact_text(markdown.fit_markdown)
+            return WebsiteCrawler._repair_compacted_text(markdown.fit_markdown)
         if hasattr(markdown, "raw_markdown") and markdown.raw_markdown:
-            return WebsiteCrawler._compact_text(markdown.raw_markdown)
+            return WebsiteCrawler._repair_compacted_text(markdown.raw_markdown)
         if isinstance(markdown, str) and markdown:
-            return WebsiteCrawler._compact_text(markdown)
+            return WebsiteCrawler._repair_compacted_text(markdown)
         cleaned_html = getattr(result, "cleaned_html", "") or getattr(result, "html", "")
         if cleaned_html:
             return WebsiteCrawler().extract_text(cleaned_html)

@@ -113,8 +113,10 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             crawl_duration_ms,
         )
         clean_start = perf_counter()
-        cleaned = self.text_cleaner.clean(crawl_result.text)
+        source_text = WebsiteCrawler._repair_compacted_text(crawl_result.text)
+        cleaned = self.text_cleaner.clean(source_text)
         clean_duration_ms = elapsed_ms(clean_start)
+        business_scope, fallback_to_raw_text = self._business_scope_from_cleaned(cleaned.text, source_text)
         logger.info(
             "website_provider_text_cleaned 官网文本清洗完成 company=%s original_length=%s cleaned_length=%s kept_fragments=%s dropped_fragments=%s duration_ms=%.2f",
             record.company_raw,
@@ -124,7 +126,7 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             cleaned.dropped_fragment_count,
             clean_duration_ms,
         )
-        if not cleaned.text:
+        if not business_scope:
             logger.warning(
                 "website_provider_text_empty 官网文本清洗后无有效业务证据 company=%s url=%s raw_length=%s",
                 record.company_raw,
@@ -132,23 +134,23 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
                 len(crawl_result.text or ""),
             )
             info = self._failed(record, "官网文本清洗后无有效业务证据", crawl_result)
-            info.raw["raw_crawl_text"] = crawl_result.text
-            info.raw["cleaning"] = self._cleaning_payload(cleaned)
+            info.raw["raw_crawl_text"] = source_text
+            info.raw["cleaning"] = self._cleaning_payload(cleaned, fallback_to_raw_text=fallback_to_raw_text)
             if self.cache:
                 self.cache.set(record.website_url, info)
             return info
         info = CompanyInfo(
             query_name=record.company_name or record.company_raw,
             company_name=record.company_name or record.company_raw,
-            business_scope=cleaned.text,
+            business_scope=business_scope,
             status="",
             source="website",
             success=True,
             raw={
                 "website_url": record.website_url,
                 "visited_urls": crawl_result.visited_urls,
-                "raw_crawl_text": crawl_result.text,
-                "cleaning": self._cleaning_payload(cleaned),
+                "raw_crawl_text": source_text,
+                "cleaning": self._cleaning_payload(cleaned, fallback_to_raw_text=fallback_to_raw_text),
             },
         )
         if self.cache:
@@ -177,11 +179,14 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
 
     def _upgrade_cached_info(self, record: EmployeeRecord, info: CompanyInfo) -> CompanyInfo:
         cleaning = info.raw.get("cleaning", {})
-        if cleaning.get("version") == self.text_cleaner.CLEANING_VERSION:
+        source_text = info.raw.get("raw_crawl_text") or info.business_scope
+        repaired_source_text = WebsiteCrawler._repair_compacted_text(source_text)
+        cached_text_has_mojibake = WebsiteCrawler._looks_mojibake(info.business_scope) or WebsiteCrawler._looks_mojibake(source_text)
+        if cleaning.get("version") == self.text_cleaner.CLEANING_VERSION and not cached_text_has_mojibake and info.business_scope:
             return info
 
-        source_text = info.raw.get("raw_crawl_text") or info.business_scope
-        cleaned = self.text_cleaner.clean(source_text)
+        cleaned = self.text_cleaner.clean(repaired_source_text)
+        business_scope, fallback_to_raw_text = self._business_scope_from_cleaned(cleaned.text, repaired_source_text)
         logger.info(
             "website_provider_cache_cleaned 官网旧缓存已重新清洗 company=%s original_length=%s cleaned_length=%s",
             record.company_raw,
@@ -189,12 +194,12 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             cleaned.cleaned_length,
         )
         raw = dict(info.raw)
-        raw.setdefault("raw_crawl_text", source_text)
-        raw["cleaning"] = self._cleaning_payload(cleaned)
+        raw["raw_crawl_text"] = repaired_source_text
+        raw["cleaning"] = self._cleaning_payload(cleaned, fallback_to_raw_text=fallback_to_raw_text)
         return CompanyInfo(
             query_name=info.query_name,
             company_name=info.company_name,
-            business_scope=cleaned.text,
+            business_scope=business_scope,
             status=info.status,
             source=info.source,
             success=info.success,
@@ -202,7 +207,16 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             raw=raw,
         )
 
-    def _cleaning_payload(self, cleaned) -> dict:
+    def _business_scope_from_cleaned(self, cleaned_text: str, source_text: str) -> tuple[str, bool]:
+        """清洗器无法识别英文证据时，保留原文，避免后续 Agent 没有证据可判断。"""
+        if cleaned_text:
+            return cleaned_text, False
+        fallback = WebsiteCrawler._repair_compacted_text(source_text)
+        if self.text_cleaner._is_maintenance_text(fallback):
+            return "", False
+        return fallback, bool(fallback)
+
+    def _cleaning_payload(self, cleaned, fallback_to_raw_text: bool = False) -> dict:
         return {
             "version": self.text_cleaner.CLEANING_VERSION,
             "original_length": cleaned.original_length,
@@ -210,4 +224,5 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             "kept_fragment_count": cleaned.kept_fragment_count,
             "dropped_fragment_count": cleaned.dropped_fragment_count,
             "mode": cleaned.mode,
+            "fallback_to_raw_text": fallback_to_raw_text,
         }
