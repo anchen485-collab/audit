@@ -43,10 +43,17 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
         if self.cache:
             cached = self.cache.get(record.website_url)
             if cached:
-                logger.info("website_provider_cache_hit 官网缓存命中 company=%s url=%s", record.company_raw, record.website_url)
-                cached = self._upgrade_cached_info(record, cached)
-                self.cache.set(record.website_url, cached)
-                return cached
+                if cached.success:
+                    logger.info("website_provider_cache_hit 官网成功缓存命中 company=%s url=%s", record.company_raw, record.website_url)
+                    cached = self._upgrade_cached_info(record, cached)
+                    self.cache.set(record.website_url, cached)
+                    return cached
+                logger.info(
+                    "website_provider_failed_cache_ignored 官网失败缓存已忽略，将重新爬取 company=%s url=%s error=%s",
+                    record.company_raw,
+                    record.website_url,
+                    cached.error,
+                )
 
         logger.info("website_provider_crawl_start 开始从官网获取企业信息 company=%s url=%s", record.company_raw, record.website_url)
         crawl_result = self.crawler.crawl(record.website_url)

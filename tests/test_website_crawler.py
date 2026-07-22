@@ -84,3 +84,42 @@ def test_website_crawler_decodes_utf8_page_when_header_encoding_is_wrong():
 
     assert "黑龙江德玉种业有限公司" in fetched_html
     assert "é»" not in fetched_html
+
+
+def test_website_crawler_uses_browser_headers_and_retries_https_after_403():
+    calls = []
+
+    def fake_get(url, timeout, headers):
+        calls.append((url, headers))
+        if url.startswith("http://"):
+            return FakeResponse("forbidden", status_code=403)
+        return FakeResponse("<html><body><p>公司简介 主营蔬菜种植、加工、销售。</p></body></html>")
+
+    crawler = WebsiteCrawler(http_get=fake_get)
+
+    fetched_html = crawler._fetch("http://demo.com/col.jsp?id=109")
+
+    assert "主营蔬菜种植" in fetched_html
+    assert calls[0][0] == "http://demo.com/col.jsp?id=109"
+    assert calls[1][0] == "https://demo.com/col.jsp?id=109"
+    assert "Mozilla/5.0" in calls[0][1]["User-Agent"]
+    assert calls[0][1]["Referer"] == "http://demo.com/"
+
+
+def test_website_crawler_retries_site_root_when_start_path_returns_404():
+    visited = []
+
+    def fake_get(url, timeout, headers):
+        visited.append(url)
+        if url == "https://demo.com/zh-hans":
+            return FakeResponse("missing", status_code=404)
+        return FakeResponse("<html><body><p>公司简介 主营水产育苗、养殖和水产品加工。</p></body></html>")
+
+    crawler = WebsiteCrawler(http_get=fake_get, min_text_length=10)
+
+    result = crawler.crawl("https://demo.com/zh-hans")
+
+    assert result.success is True
+    assert visited == ["https://demo.com/zh-hans", "https://demo.com"]
+    assert result.visited_urls == ["https://demo.com"]
+    assert "水产育苗" in result.text

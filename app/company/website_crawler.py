@@ -50,6 +50,24 @@ IGNORED_EXTENSIONS = (
     ".mp4",
     ".avi",
 )
+DEFAULT_REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Connection": "keep-alive",
+}
+
+
+class WebsiteFetchStatusError(requests.RequestException):
+    """页面返回非成功 HTTP 状态码。"""
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"HTTP {status_code}")
 
 
 @dataclass
@@ -120,6 +138,17 @@ class WebsiteCrawler:
             try:
                 html = self._fetch(current.url)
             except Exception as exc:
+                fallback_url = self._fallback_start_url(current.url, exc)
+                if not visited and fallback_url and fallback_url not in queued and fallback_url not in fetched_html:
+                    logger.info(
+                        "website_crawl_retry_site_root 首页路径访问失败，尝试官网根地址 url=%s fallback_url=%s error=%s",
+                        current.url,
+                        fallback_url,
+                        exc,
+                    )
+                    queued.add(fallback_url)
+                    queue.appendleft(LinkCandidate(fallback_url, 0, True, 0))
+                    continue
                 if not visited:
                     logger.warning("website_crawl_failed 官网首页无法访问 url=%s error=%s", normalized_url, exc)
                     return WebsiteCrawlResult(success=False, url=normalized_url, error=f"官网无法访问：{exc}")
@@ -213,14 +242,43 @@ class WebsiteCrawler:
         return self._compact_text(soup.get_text(" ", strip=True))
 
     def _fetch(self, url: str) -> str:
-        response = self.http_get(
+        response = self._http_get(url)
+        if response.status_code == 403 and url.startswith("http://"):
+            secure_url = "https://" + url[len("http://") :]
+            logger.info("website_crawl_retry_https HTTP 403 后尝试 HTTPS url=%s secure_url=%s", url, secure_url)
+            secure_response = self._http_get(secure_url)
+            if secure_response.status_code < 400:
+                response = secure_response
+        if response.status_code >= 400:
+            raise WebsiteFetchStatusError(response.status_code)
+        return self._decode_response_text(response)
+
+    def _http_get(self, url: str):
+        return self.http_get(
             url,
             timeout=self.timeout,
-            headers={"User-Agent": "audit-agent/1.0"},
+            headers=self._request_headers(url),
         )
-        if response.status_code >= 400:
-            raise requests.RequestException(f"HTTP {response.status_code}")
-        return self._decode_response_text(response)
+
+    @staticmethod
+    def _request_headers(url: str) -> dict[str, str]:
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}/" if parsed.scheme and parsed.netloc else ""
+        headers = dict(DEFAULT_REQUEST_HEADERS)
+        if base_url:
+            headers["Referer"] = base_url
+        return headers
+
+    @staticmethod
+    def _fallback_start_url(url: str, exc: Exception) -> str:
+        if not isinstance(exc, WebsiteFetchStatusError) or exc.status_code != 404:
+            return ""
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+        if parsed.path in {"", "/"} and not parsed.query:
+            return ""
+        return f"{parsed.scheme}://{parsed.netloc}"
 
     @staticmethod
     def _decode_response_text(response) -> str:

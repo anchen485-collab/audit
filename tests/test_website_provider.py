@@ -107,3 +107,44 @@ def test_website_provider_recleans_stale_cache_before_returning(tmp_path):
     assert "主营蔬菜种植、加工、销售" in info.business_scope
     assert "联系我们" not in info.business_scope
     assert info.raw["cleaning"]["version"] == provider.text_cleaner.CLEANING_VERSION
+
+
+def test_website_provider_ignores_failed_cache_and_recrawls(tmp_path):
+    cache_path = tmp_path / "website_cache.json"
+    cache_path.write_text(
+        """
+        {
+          "https://demo.com": {
+            "query_name": "陕西汇生源生态农业有限公司",
+            "company_name": "陕西汇生源生态农业有限公司",
+            "business_scope": "",
+            "status": "",
+            "source": "website",
+            "success": false,
+            "error": "官网无法访问：HTTP 404",
+            "raw": {
+              "website_url": "https://demo.com",
+              "visited_urls": []
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    crawler = FakeCrawler(
+        WebsiteCrawlResult(
+            success=True,
+            url="https://demo.com",
+            text="公司简介 主营蔬菜种植、加工、销售。",
+            visited_urls=["https://demo.com"],
+        )
+    )
+    provider = WebsiteCompanyInfoProvider(crawler=crawler, cache_path=cache_path)
+
+    info = provider.get_company_info_for_record(build_record())
+    second = provider.get_company_info_for_record(build_record())
+
+    assert info.success is True
+    assert second.success is True
+    assert crawler.urls == ["https://demo.com"]
+    assert "蔬菜种植、加工、销售" in info.business_scope

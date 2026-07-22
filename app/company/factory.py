@@ -40,7 +40,7 @@ def _build_website_crawler():
     max_pages = int(os.getenv("WEBSITE_CRAWL_MAX_PAGES", "4"))
     max_depth = int(os.getenv("WEBSITE_CRAWL_MAX_DEPTH", "2"))
     timeout = int(os.getenv("WEBSITE_CRAWL_TIMEOUT", "8"))
-    engine = os.getenv("WEBSITE_CRAWLER_ENGINE", "requests").strip().lower()
+    engine = os.getenv("WEBSITE_CRAWLER_ENGINE", "hybrid").strip().lower()
 
     if engine == "crawl4ai":
         return Crawl4AIWebsiteCrawler(max_pages=max_pages, max_depth=max_depth, timeout=timeout)

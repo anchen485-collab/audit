@@ -52,7 +52,7 @@ AUDIT_LOG_LEVEL=INFO
 WEBSITE_CRAWL_MAX_PAGES=4
 WEBSITE_CRAWL_MAX_DEPTH=2
 WEBSITE_CRAWL_TIMEOUT=8
-WEBSITE_CRAWLER_ENGINE=requests
+WEBSITE_CRAWLER_ENGINE=hybrid
 WEBSITE_CRAWL_TARGET_MODULES=公司简介,经典案例,业务领域
 WEBSITE_CRAWL_CONCURRENCY=5
 ```
@@ -74,7 +74,7 @@ WEBSITE_CRAWL_MAX_DEPTH=2
 如果路径类似“首页 -> 解决方案 -> 农业方案 -> 业务领域”，需要设置为 `3`。
 建议第一版不要超过 `3`，否则批量审计会明显变慢。
 
-官网爬虫默认使用轻量的 `requests + BeautifulSoup`。如果遇到 JS 渲染官网或静态爬虫证据不足，可以启用 Crawl4AI 兜底：
+官网爬虫默认使用 `hybrid` 模式：先用轻量的 `requests + BeautifulSoup`，如果遇到 JS 渲染官网、HTTP 403 或静态爬虫证据不足，再自动切到 Crawl4AI 兜底：
 
 ```text
 WEBSITE_CRAWLER_ENGINE=hybrid
@@ -89,9 +89,9 @@ crawl4ai-setup
 可选值：
 
 ```text
-requests  # 默认，只使用当前轻量爬虫
+requests  # 只使用当前轻量爬虫
 crawl4ai  # 只使用 Crawl4AI
-hybrid    # 轻量爬虫失败后自动切换到 Crawl4AI
+hybrid    # 默认，轻量爬虫失败后自动切换到 Crawl4AI
 ```
 
 控制台日志默认使用 `INFO` 级别，会输出上传、读表、企业查询、官网爬取、规则匹配和导出等关键事件。排查问题时可以临时设置：
