@@ -4,8 +4,11 @@ from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
 
 
 class FakeClassificationAgent:
-    def __init__(self, result):
+    def __init__(self, result, candidate_topk=None, entered_level1_expand_topk=None, evidence_topk=None):
         self.result = result
+        self.candidate_topk = candidate_topk
+        self.entered_level1_expand_topk = entered_level1_expand_topk
+        self.evidence_topk = evidence_topk
         self.calls = []
 
     def classify(self, record, company, rules):
@@ -216,6 +219,167 @@ def test_audit_record_suggests_better_category_when_scope_mismatches():
     assert result.needs_review is False
 
 
+def test_audit_record_sends_topk_candidate_rules_to_classification_agent():
+    agent = FakeClassificationAgent(AgentClassificationResult(), candidate_topk=1)
+    record = EmployeeRecord(
+        row_number=2,
+        date="2026-07-23",
+        name="Alex",
+        category="Original",
+        subcategory="OriginalSub",
+        company_raw="Demo Company",
+    )
+    company = CompanyInfo(
+        query_name="Demo Company",
+        company_name="Demo Company",
+        business_scope="freight shipping and export services",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("Agriculture", "Fruit", "Apple", "Type", ["apple"]),
+        CategoryRule("Agriculture", "Grain", "Rice", "Type", ["rice"]),
+        CategoryRule("Services", "Logistics", "Freight", "Type", ["freight"]),
+    ]
+
+    audit_record(record, rules, company, classification_agent=agent)
+
+    passed_rules = agent.calls[0][2]
+    assert len(passed_rules) == 1
+    assert passed_rules[0].level2 == "Logistics"
+
+
+def test_audit_record_keeps_entered_category_rules_in_agent_candidates():
+    agent = FakeClassificationAgent(AgentClassificationResult(), candidate_topk=2)
+    record = EmployeeRecord(
+        row_number=2,
+        date="2026-07-23",
+        name="Alex",
+        category="Exhibition",
+        subcategory="Commercial Consumer",
+        company_raw="Demo Company",
+    )
+    company = CompanyInfo(
+        query_name="Demo Company",
+        company_name="Demo Company",
+        business_scope="cattle pasture dairy herd breeding",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("Animal Husbandry", "Livestock", "Cattle", "Type", ["cattle", "pasture", "dairy", "herd"]),
+        CategoryRule("Exhibition", "Commercial Consumer", "Consumer Expo", "Type", ["expo"]),
+    ]
+
+    audit_record(record, rules, company, classification_agent=agent)
+
+    passed_rules = agent.calls[0][2]
+    assert {rule.level1 for rule in passed_rules} == {"Animal Husbandry", "Exhibition"}
+
+
+def test_audit_record_prioritizes_entered_category_when_candidate_limit_is_small():
+    agent = FakeClassificationAgent(AgentClassificationResult(), candidate_topk=1)
+    record = EmployeeRecord(
+        row_number=2,
+        date="2026-07-23",
+        name="Alex",
+        category="Exhibition",
+        subcategory="Commercial Consumer",
+        company_raw="Demo Company",
+    )
+    company = CompanyInfo(
+        query_name="Demo Company",
+        company_name="Demo Company",
+        business_scope="cattle pasture dairy herd breeding",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("Animal Husbandry", "Livestock", "Cattle", "Type", ["cattle", "pasture", "dairy", "herd"]),
+        CategoryRule("Exhibition", "Commercial Consumer", "Consumer Expo", "Type", ["expo"]),
+    ]
+
+    audit_record(record, rules, company, classification_agent=agent)
+
+    passed_rules = agent.calls[0][2]
+    assert len(passed_rules) == 1
+    assert passed_rules[0].level1 == "Exhibition"
+
+
+def test_audit_record_expands_candidates_under_entered_level1():
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(),
+        candidate_topk=3,
+        entered_level1_expand_topk=3,
+        evidence_topk=0,
+    )
+    record = EmployeeRecord(
+        row_number=2,
+        date="2026-07-23",
+        name="Alex",
+        category="Exhibition",
+        subcategory="Commercial Consumer",
+        company_raw="Demo Company",
+    )
+    company = CompanyInfo(
+        query_name="Demo Company",
+        company_name="Demo Company",
+        business_scope="building materials and home decoration expo",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("Exhibition", "Commercial Consumer", "Consumer Expo", "Type", ["consumer"]),
+        CategoryRule("Exhibition", "Building Home", "Home Expo", "Type", ["building", "home", "decoration"]),
+        CategoryRule("Exhibition", "Medical Health", "Medical Expo", "Type", ["medical"]),
+        CategoryRule("Animal Husbandry", "Livestock", "Cattle", "Type", ["cattle"]),
+    ]
+
+    audit_record(record, rules, company, classification_agent=agent)
+
+    passed_level2 = {rule.level2 for rule in agent.calls[0][2]}
+    assert "Commercial Consumer" in passed_level2
+    assert "Building Home" in passed_level2
+    assert "Livestock" not in passed_level2
+
+
+def test_audit_record_marks_partial_current_match_with_scope_evidence_as_reviewable_correct():
+    record = EmployeeRecord(
+        row_number=3,
+        date="7月22日",
+        name="安鹏",
+        category="会展服务",
+        subcategory="医疗健康",
+        company_raw="湖北贸促商务服务有限公司",
+    )
+    company = CompanyInfo(
+        query_name="湖北贸促商务服务有限公司",
+        company_name="湖北贸促商务服务有限公司",
+        business_scope="武汉医疗器械展览会，为医疗诊断、治疗、检验、康复等产品展示和技术交流提供平台。",
+        status="",
+        source="website",
+        success=True,
+        raw={"website_url": "http://www.hbexpo.org.cn/"},
+    )
+    rules = [
+        CategoryRule("会展服务", "医疗健康", "医疗展会", "类型", ["医疗器械", "医疗诊断"]),
+        CategoryRule("会展服务", "交通物流", "物流展会", "类型", ["物流", "货运"]),
+    ]
+
+    result = audit_record(record, rules, company)
+
+    assert result.status == "正确"
+    assert result.confidence >= 60
+    assert result.error_type == "低置信度匹配"
+    assert result.needs_review is True
+    assert result.suggestion == ""
+    assert "经营范围关键词" in result.reason
+
+
 def test_audit_record_can_use_classification_agent_result():
     record = EmployeeRecord(
         row_number=2,
@@ -337,6 +501,45 @@ def test_audit_record_trims_agent_suggestion_to_level1_and_level2():
 
     assert result.suggestion == "种植业 / 粮食作物"
     assert "谷物类" not in result.suggestion
+
+
+def test_audit_record_drops_agent_suggestion_when_same_as_entered_category():
+    record = EmployeeRecord(
+        row_number=11,
+        date="7月22日",
+        name="安鹏",
+        category="会展服务",
+        subcategory="文化教育娱乐",
+        company_raw="测试会展企业",
+    )
+    company = CompanyInfo(
+        query_name="测试会展企业",
+        company_name="测试会展企业",
+        business_scope="企业从事展览展示服务和展台搭建。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("会展服务", "文化教育娱乐", "文化展会", "类型", ["文化", "教育", "娱乐"]),
+        CategoryRule("会展服务", "交通物流", "汽车展会", "类型", ["汽车", "物流"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="会展服务",
+            matched_level2="文化教育娱乐",
+            audit_result="疑似错误",
+            confidence=60,
+            reason="证据不足，无法确定是否属于文化教育娱乐。",
+            suggestion="会展服务 / 文化教育娱乐",
+            needs_review=True,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "疑似错误"
+    assert result.suggestion == ""
 
 
 def test_level1_level2_suggestion_extracts_labeled_second_level_without_third_level():

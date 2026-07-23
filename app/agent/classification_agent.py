@@ -70,10 +70,21 @@ class OpenAICompatibleChatClient:
 class ClassificationAgent:
     """Use an LLM to classify cleaned website evidence against the internal category table."""
 
-    def __init__(self, chat_client, max_category_chars: int = 70000, max_evidence_chars: int = 8000):
+    def __init__(
+        self,
+        chat_client,
+        max_category_chars: int = 8000,
+        max_evidence_chars: int = 3000,
+        candidate_topk: int = 30,
+        entered_level1_expand_topk: int = 10,
+        evidence_topk: int = 20,
+    ):
         self.chat_client = chat_client
         self.max_category_chars = max_category_chars
         self.max_evidence_chars = max_evidence_chars
+        self.candidate_topk = candidate_topk
+        self.entered_level1_expand_topk = entered_level1_expand_topk
+        self.evidence_topk = evidence_topk
 
     def classify(
         self,
@@ -137,16 +148,22 @@ def build_classification_agent_from_env() -> ClassificationAgent | None:
 
     base_url = os.getenv("AUDIT_LLM_BASE_URL", "https://api.openai.com/v1").strip()
     timeout = int(os.getenv("AUDIT_LLM_TIMEOUT", "60"))
-    max_category_chars = int(os.getenv("AUDIT_LLM_MAX_CATEGORY_CHARS", "70000"))
-    max_evidence_chars = int(os.getenv("AUDIT_LLM_MAX_EVIDENCE_CHARS", "8000"))
+    max_category_chars = int(os.getenv("AUDIT_LLM_MAX_CATEGORY_CHARS", "8000"))
+    max_evidence_chars = int(os.getenv("AUDIT_LLM_MAX_EVIDENCE_CHARS", "3000"))
+    candidate_topk = int(os.getenv("AUDIT_LLM_CANDIDATE_TOPK", "30"))
+    entered_level1_expand_topk = int(os.getenv("AUDIT_LLM_ENTERED_LEVEL1_EXPAND_TOPK", "10"))
+    evidence_topk = int(os.getenv("AUDIT_LLM_EVIDENCE_TOPK", "20"))
     return ClassificationAgent(
         chat_client=OpenAICompatibleChatClient(api_key=api_key, model=model, base_url=base_url, timeout=timeout),
         max_category_chars=max_category_chars,
         max_evidence_chars=max_evidence_chars,
+        candidate_topk=candidate_topk,
+        entered_level1_expand_topk=entered_level1_expand_topk,
+        evidence_topk=evidence_topk,
     )
 
 
-def format_category_rules_for_agent(rules: list[CategoryRule], max_chars: int = 70000) -> str:
+def format_category_rules_for_agent(rules: list[CategoryRule], max_chars: int = 8000) -> str:
     grouped: dict[tuple[str, str, str], list[CategoryRule]] = {}
     for rule in rules:
         grouped.setdefault((rule.level1, rule.level2, rule.level3), []).append(rule)
@@ -207,6 +224,8 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
 
 外部证据文本：
 {evidence_text}
+
+注意：下面的内部分类表是从完整规则库召回的候选子集，不一定是完整分类表；不要据此断言完整规则库中不存在某个分类。
 
 内部分类表：
 {category_text}
