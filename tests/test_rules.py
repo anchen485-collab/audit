@@ -397,6 +397,46 @@ def test_agent_cannot_mark_nonexistent_level_pair_as_correct():
     assert "不能判为正确" in result.reason
 
 
+def test_agent_can_mark_multiple_existing_subcategories_as_correct():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="张硕",
+        category="种植业",
+        subcategory="水果作物，蔬菜作物",
+        company_raw="测试农产品公司",
+    )
+    company = CompanyInfo(
+        query_name="测试农产品公司",
+        company_name="测试农产品公司",
+        business_scope="外部证据显示公司主要从事水果和蔬菜的种植。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "水果作物", "类型", ["水果"]),
+        CategoryRule("农业", "种植业", "蔬菜作物", "类型", ["蔬菜"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="农业",
+            matched_level2="种植业",
+            audit_result="正确",
+            confidence=90,
+            reason="外部证据显示公司主要从事水果和蔬菜的种植。",
+            suggestion="",
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "正确"
+    assert result.error_type == ""
+    assert result.needs_review is False
+
+
 def test_agent_can_mark_existing_level3_subcategory_as_correct():
     record = EmployeeRecord(
         row_number=2,

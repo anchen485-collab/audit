@@ -154,24 +154,37 @@ def audit_record(
 
 def _contained_entered_categories(record: EmployeeRecord, business_scope: str) -> list[str]:
     """判断官网证据是否直接包含员工录入的分类名称。"""
-    if not record.subcategory or record.subcategory not in business_scope:
+    if not record.subcategory:
         return []
-    entered_categories = [record.category, record.subcategory]
+    entered_categories = [record.category, *_split_category_values(record.subcategory)]
     return [name for name in entered_categories if name and name in business_scope]
+
+
+def _split_category_values(value: str) -> list[str]:
+    """把员工单元格中的多个细分拆开，兼容常见分隔符。"""
+    return [part.strip() for part in re.split(r"[、，,;；/\\\n\r]+", value or "") if part.strip()]
 
 
 def _matches_entered_category_path(key: tuple[str, str, str], category: str, subcategory: str) -> bool:
     """判断员工录入的一级分类和细分是否命中内部分类路径。"""
     level1, level2, level3 = key
-    if category == level1 and subcategory in {level2, level3}:
-        return True
-    # 兼容历史数据：旧模板里“一级分类”可能实际填写的是内部二级品类。
-    return category == level2 and subcategory == level3
+    subcategories = _split_category_values(subcategory)
+    if not subcategories:
+        return False
+    return any(
+        (category == level1 and item in {level2, level3})
+        # 兼容历史数据：旧模板里“一级分类”可能实际填写的是内部二级品类。
+        or (category == level2 and item == level3)
+        for item in subcategories
+    )
 
 
 def _entered_category_path_exists(grouped: dict[tuple[str, str, str], list[CategoryRule]], category: str, subcategory: str) -> bool:
     """判断员工录入分类是否存在于内部分类表任一层级路径中。"""
-    return any(_matches_entered_category_path(key, category, subcategory) for key in grouped)
+    subcategories = _split_category_values(subcategory)
+    if not subcategories:
+        return False
+    return all(any(_matches_entered_category_path(key, category, item) for key in grouped) for item in subcategories)
 
 
 def _agent_category_path_exists(
@@ -182,8 +195,12 @@ def _agent_category_path_exists(
 ) -> bool:
     """判断大模型返回的内部分类路径是否存在。"""
     if level3:
-        return any(key == (level1, level2, level3) for key in grouped)
-    return any(key[0] == level1 and key[1] == level2 for key in grouped)
+        level3_values = _split_category_values(level3)
+        return all(any(key == (level1, level2, item) for key in grouped) for item in level3_values)
+    level2_values = _split_category_values(level2)
+    if not level2_values:
+        return False
+    return all(any(key[0] == level1 and key[1] == item for key in grouped) for item in level2_values)
 
 
 def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[str, str, str], list[CategoryRule]]) -> AuditResult:
