@@ -303,17 +303,50 @@ def _has_business_keyword_evidence(evidence: list[str]) -> bool:
     return any(item.startswith("经营范围关键词：") for item in evidence)
 
 
+# 畜牧业下细分名称的等价映射（带"养殖"后缀与不带后缀视为等价）
+_LIVESTOCK_SUBCATEGORY_MAP: dict[str, set[str]] = {
+    "家畜": {"家畜", "家畜养殖"},
+    "家畜养殖": {"家畜", "家畜养殖"},
+    "家禽": {"家禽", "家禽养殖"},
+    "家禽养殖": {"家禽", "家禽养殖"},
+    "水产": {"水产", "水产养殖"},
+    "水产养殖": {"水产", "水产养殖"},
+    "特种": {"特种", "特种养殖"},
+    "特种养殖": {"特种", "特种养殖"},
+}
+
+
 def _matches_entered_category_path(key: tuple[str, str, str], category: str, subcategory: str) -> bool:
-    """判断员工录入的一级分类和细分是否命中内部分类路径。"""
+    """判断员工录入的一级分类和细分是否命中内部分类路径。
+
+    当一级分类为"畜牧业"时，启用细分名称等价映射（如"家禽"↔"家禽养殖"）。
+    """
     level1, level2, level3 = key
     subcategories = _split_category_values(subcategory)
-    if not subcategories:
+    categories = _split_category_values(category)
+    if not subcategories or not categories:
         return False
+
+    # 判断当前内部分类路径的一级是否为畜牧业
+    is_livestock = level1 == "畜牧业"
+
+    def _subcategory_matches(item: str, target: str) -> bool:
+        """判断员工细分 item 是否匹配内部分类路径中的 target（二级或三级）。"""
+        if item == target:
+            return True
+        if is_livestock:
+            # 畜牧业下启用等价映射
+            equivalents = _LIVESTOCK_SUBCATEGORY_MAP.get(item, set())
+            return target in equivalents
+        return False
+
     return any(
-        (category == level1 and item in {level2, level3})
-        or (category == level2 and item == level3)
-        or (category == level1 and level2 == category and item == level3)
+        (cat == level1 and _subcategory_matches(item, level2))
+        or (cat == level1 and _subcategory_matches(item, level3))
+        or (cat == level2 and item == level3)
+        or (cat == level1 and level2 == cat and item == level3)
         for item in subcategories
+        for cat in categories
     )
 
 
@@ -331,14 +364,25 @@ def _agent_category_path_exists(
     level2: str,
     level3: str = "",
 ) -> bool:
-    """判断大模型返回的内部分类路径是否存在。"""
+    """判断大模型返回的内部分类路径是否存在。
+
+    level1 和 level2 均支持逗号分隔的多个值，只要任一 level1 与 level2 的组合存在即视为匹配。
+    """
+    level1_values = _split_category_values(level1)
+    level2_values = _split_category_values(level2)
+    if not level1_values or not level2_values:
+        return False
     if level3:
         level3_values = _split_category_values(level3)
-        return all(any(key == (level1, level2, item) for key in grouped) for item in level3_values)
-    level2_values = _split_category_values(level2)
-    if not level2_values:
-        return False
-    return all(any(key[0] == level1 and key[1] == item for key in grouped) for item in level2_values)
+        return all(
+            any(key == (l1, l2, item) for key in grouped for l1 in level1_values for l2 in level2_values)
+            for item in level3_values
+        )
+    # level2 可能包含多个值（逗号分隔），每个值都需存在
+    return all(
+        any(key[0] == l1 and key[1] == l2 for key in grouped for l1 in level1_values)
+        for l2 in level2_values
+    )
 
 
 def _candidate_rules_for_agent(
@@ -811,7 +855,10 @@ def _ranked_entered_level_candidates(
 
 
 def _key_matches_entered_primary_category(key: tuple[str, str, str], record: EmployeeRecord) -> bool:
-    return bool(record.category and record.category in {key[0], key[1]})
+    if not record.category:
+        return False
+    categories = _split_category_values(record.category)
+    return any(cat in {key[0], key[1]} for cat in categories)
 
 
 def _extend_unique_keys(target: list[tuple[str, str, str]], keys: list[tuple[str, str, str]], limit: int | None = None) -> None:
