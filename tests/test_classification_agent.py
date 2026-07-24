@@ -83,6 +83,9 @@ def test_classification_agent_prompt_allows_subcategory_to_be_level2_or_level3()
 
     assert result.audit_result == "正确"
     assert "细分可能是内部二级品类，也可能是内部三级品类" in user_prompt
+    assert "细分允许同时填写多个二级或三级品类" in user_prompt
+    assert "不要要求只选择一个“最匹配”的二级分类" in user_prompt
+    assert "如果命中多个二级品类，可用逗号分隔" in user_prompt
     assert "环节不作为判断正确或错误的标准" in user_prompt
     assert "当前环节" not in user_prompt
     assert '"matched_level1"' in user_prompt

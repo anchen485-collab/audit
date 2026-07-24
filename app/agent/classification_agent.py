@@ -73,11 +73,11 @@ class ClassificationAgent:
     def __init__(
         self,
         chat_client,
-        max_category_chars: int = 8000,
+        max_category_chars: int = 20000,
         max_evidence_chars: int = 3000,
-        candidate_topk: int = 30,
-        entered_level1_expand_topk: int = 10,
-        evidence_topk: int = 20,
+        candidate_topk: int = 80,
+        entered_level1_expand_topk: int = 0,
+        evidence_topk: int = 60,
     ):
         self.chat_client = chat_client
         self.max_category_chars = max_category_chars
@@ -101,8 +101,13 @@ class ClassificationAgent:
                 "content": (
                     "你是企业分类审计 Agent。你只能根据用户提供的内部分类表和外部证据文本判断，"
                     "判断员工录入的一级分类和细分是否正确；细分可能是内部二级品类，也可能是内部三级品类。"
+                    "员工录入的细分允许用逗号、顿号、分号、斜杠等分隔符同时填写多个二级或三级品类；"
+                    "如果这些细分均存在于内部分类表且外部证据支持企业覆盖这些业务方向，可以判定为正确，"
+                    "不要因为细分数量超过一个就要求选择最匹配的单一分类。"
                     "不要把员工录入的环节作为判断正确或错误的标准。"
                     "必须从内部分类表已有一级、二级、三级类目中选择，不允许编造新分类。"
+                    "如果候选分类未包含员工录入分类，但外部证据明显支持该录入，不要直接判错，"
+                    "应返回疑似错误或无法判断，并在 reason 中说明候选召回可能不足。"
                     "如果证据不足以确定，请返回 audit_result=疑似错误 或 无法判断，并说明原因。"
                     "只输出 JSON，不要输出 Markdown。"
                 ),
@@ -148,11 +153,11 @@ def build_classification_agent_from_env() -> ClassificationAgent | None:
 
     base_url = os.getenv("AUDIT_LLM_BASE_URL", "https://api.openai.com/v1").strip()
     timeout = int(os.getenv("AUDIT_LLM_TIMEOUT", "60"))
-    max_category_chars = int(os.getenv("AUDIT_LLM_MAX_CATEGORY_CHARS", "8000"))
+    max_category_chars = int(os.getenv("AUDIT_LLM_MAX_CATEGORY_CHARS", "20000"))
     max_evidence_chars = int(os.getenv("AUDIT_LLM_MAX_EVIDENCE_CHARS", "3000"))
-    candidate_topk = int(os.getenv("AUDIT_LLM_CANDIDATE_TOPK", "30"))
-    entered_level1_expand_topk = int(os.getenv("AUDIT_LLM_ENTERED_LEVEL1_EXPAND_TOPK", "10"))
-    evidence_topk = int(os.getenv("AUDIT_LLM_EVIDENCE_TOPK", "20"))
+    candidate_topk = int(os.getenv("AUDIT_LLM_CANDIDATE_TOPK", "80"))
+    entered_level1_expand_topk = int(os.getenv("AUDIT_LLM_ENTERED_LEVEL1_EXPAND_TOPK", "0"))
+    evidence_topk = int(os.getenv("AUDIT_LLM_EVIDENCE_TOPK", "60"))
     return ClassificationAgent(
         chat_client=OpenAICompatibleChatClient(api_key=api_key, model=model, base_url=base_url, timeout=timeout),
         max_category_chars=max_category_chars,
@@ -212,6 +217,8 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
     return f"""
 请基于“内部分类表”和“外部证据文本”判断员工录入分类是否正确。
 员工录入的细分可能是内部二级品类，也可能是内部三级品类；请结合内部分类表判断它命中哪一级。
+员工录入的细分允许同时填写多个二级或三级品类；请分别校验每个细分是否存在于当前一级分类下，并结合外部证据判断是否均被支持。
+如果多个细分均存在于内部分类表且外部证据支持企业覆盖这些业务方向，可以判定为正确；不要要求只选择一个“最匹配”的二级分类。
 员工录入的环节不作为判断正确或错误的标准，不要因为环节不一致判错。
 
 员工录入：
@@ -226,6 +233,7 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
 {evidence_text}
 
 注意：下面的内部分类表是从完整规则库召回的候选子集，不一定是完整分类表；不要据此断言完整规则库中不存在某个分类。
+如果员工录入分类没有出现在候选子集中，但外部证据支持它，请标记为需要复核，并说明“候选召回可能不足”，不要直接判定为内部分类不存在。
 
 内部分类表：
 {category_text}
@@ -233,8 +241,8 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
 请返回严格 JSON，字段如下：
 {{
   "matched_level1": "从内部分类表选择的一级品类",
-  "matched_level2": "从内部分类表选择的二级品类",
-  "matched_level3": "从内部分类表选择的三级品类；如果员工细分只命中二级或无法确定则为空",
+  "matched_level2": "从内部分类表选择的二级品类；如果命中多个二级品类，可用逗号分隔",
+  "matched_level3": "从内部分类表选择的三级品类；如果员工细分只命中二级或无法确定则为空；如果命中多个三级品类，可用逗号分隔",
   "matched_module": "用于支持分类判断的模块名称；没有则为空",
   "matched_keywords": ["命中的内部分类表关键词"],
   "audit_result": "正确/错误/疑似错误/无法判断",

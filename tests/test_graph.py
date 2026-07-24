@@ -23,7 +23,8 @@ def build_category_file(path: Path):
     wb.save(path)
 
 
-def test_run_audit_workflow_exports_result_excel(tmp_path):
+def test_run_audit_workflow_exports_result_excel(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUDIT_LLM_AGENT_ENABLED", "false")
     employee_file = tmp_path / "employee.xlsx"
     category_file = tmp_path / "category.xlsx"
     output_dir = tmp_path / "outputs"
@@ -63,6 +64,7 @@ def test_run_audit_workflow_exports_result_excel(tmp_path):
 
 
 def test_run_audit_workflow_loads_category_rules_from_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUDIT_LLM_AGENT_ENABLED", "false")
     employee_file = tmp_path / "employee.xlsx"
     category_file = tmp_path / "category.xlsx"
     output_dir = tmp_path / "outputs"

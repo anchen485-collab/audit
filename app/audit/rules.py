@@ -8,6 +8,96 @@ from app.core.models import AuditResult, CategoryRule, CompanyInfo, EmployeeReco
 
 logger = logging.getLogger(__name__)
 
+FULL_CATEGORY_REVIEW_TRIGGER_WORDS = (
+    "候选召回不足",
+    "内部分类表未包含",
+    "无法判断",
+    "高风险错误",
+)
+
+GENERIC_RETRIEVAL_WORDS = {
+    "业务",
+    "服务",
+    "经营",
+    "咨询",
+    "网站",
+    "会展",
+    "平台",
+    "系统",
+    "公司",
+    "企业",
+    "销售",
+    "加工",
+    "生产",
+}
+LOW_SIGNAL_RETRIEVAL_MODULES = {"环节", "生态", "全产业链"}
+FERTILIZER_STRONG_WORDS = {"钛肥", "化肥", "复合肥", "有机肥", "氮肥", "磷肥", "钾肥", "水溶肥", "微生物肥"}
+FERTILIZER_WEAK_WORDS = {"肥料", "肥业"}
+EQUIPMENT_CONTEXT_WORDS = {"设备", "装备", "机械", "仪器", "装置", "设施", "系统", "生产线", "包装机", "灌装", "输送"}
+CONSULTING_CONTEXT_WORDS = {"咨询", "顾问", "培训", "规划", "评估", "技术服务", "技术指导", "解决方案", "方案设计"}
+CONSULTING_PRIMARY_WORDS = {"咨询", "顾问", "培训", "技术服务", "技术指导"}
+SOFTWARE_CONTEXT_WORDS = {"软件", "系统", "平台", "APP", "小程序", "数字化", "信息化", "数据", "物联网", "管理系统", "监测平台"}
+SOFTWARE_PRIMARY_WORDS = {"开发", "建设", "研发", "运维", "集成", "提供", "平台", "系统"}
+EXHIBITION_CONTEXT_WORDS = {"展会", "展览", "博览会", "交易会", "论坛", "会务", "展台", "参展", "展示"}
+ENGINEERING_CONTEXT_WORDS = {"工程", "施工", "设计", "总包", "承包", "建设", "安装", "运维", "改造", "项目建设"}
+MATERIAL_CONTEXT_WORDS = {"材料", "建材", "制品", "涂料", "水泥", "混凝土", "玻璃", "陶瓷", "防水", "保温", "耐火", "密封"}
+PRODUCT_PRIMARY_WORDS = {"研发", "生产", "制造", "销售", "产品", "厂家", "供应"}
+AGRI_EQUIPMENT_DOMAIN_WORDS = {"水产", "水产养殖", "养殖", "渔业", "畜牧", "家禽", "家畜", "农林牧渔", "农业"}
+EQUIPMENT_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
+    (AGRI_EQUIPMENT_DOMAIN_WORDS, "农林牧渔机械"),
+    ({"医疗", "医院", "医用", "诊断", "康复", "医疗器械"}, "医疗设备"),
+    ({"化工", "化肥", "肥料", "石化", "橡胶", "塑料"}, "化工设备"),
+    ({"食品", "粮食", "水产品", "果蔬", "饮料", "肉类", "屠宰"}, "食品设备"),
+    ({"制药", "药品", "兽药", "中药", "生物药"}, "制药设备"),
+    ({"建筑", "工程建设", "施工"}, "建筑设备"),
+    ({"建材", "水泥", "玻璃", "陶瓷"}, "建材设备"),
+    ({"纺织", "服装", "面料"}, "纺织设备"),
+    ({"矿山", "采矿", "冶金", "钢铁", "有色金属"}, "采矿冶金设备"),
+]
+EXHIBITION_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
+    ({"农业", "农林", "水产", "畜牧", "渔业", "种植", "农资"}, "农林牧渔"),
+    ({"工业", "制造", "设备", "机械", "化工"}, "工业制造"),
+    ({"建筑", "建材", "家居", "装饰"}, "建筑家居"),
+    ({"能源", "化工", "石油", "电力", "光伏"}, "能源化工"),
+    ({"医疗", "健康", "医药", "医院", "器械"}, "医疗健康"),
+    ({"食品", "饮料", "农产品", "水产品"}, "食品饮料"),
+    ({"物流", "交通", "货运", "汽车"}, "交通物流"),
+    ({"信息", "科技", "软件", "互联网"}, "信息科技"),
+    ({"商业", "消费", "零售", "连锁"}, "商业消费"),
+    ({"文化", "教育", "娱乐", "文旅"}, "文化教育娱乐"),
+]
+ENGINEERING_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
+    ({"光伏", "太阳能"}, "光伏"),
+    ({"风电", "风力发电"}, "风电"),
+    ({"水电", "水力发电"}, "水电"),
+    ({"输变电", "变电站", "配电网", "特高压"}, "输变电工程"),
+    ({"绿化", "园林"}, "绿化工程"),
+    ({"水产养殖", "养殖工程"}, "水产养殖"),
+]
+MATERIAL_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
+    ({"防水"}, "防水材料"),
+    ({"保温"}, "保温材料"),
+    ({"耐火"}, "耐火材料"),
+    ({"密封"}, "密封材料"),
+    ({"路面", "沥青"}, "路面材料"),
+    ({"水泥"}, "水泥"),
+    ({"混凝土"}, "混凝土"),
+    ({"玻璃"}, "玻璃"),
+    ({"陶瓷"}, "陶瓷"),
+    ({"涂料"}, "涂料"),
+    ({"医疗", "医用", "卫生"}, "卫生材料及医药用品"),
+    ({"化工", "化学"}, "化学制品"),
+]
+EVIDENCE_ALIASES: dict[tuple[str, ...], list[tuple[str, str, str]]] = {
+    ("兽药", "动物保健品", "动物药品"): [("医药工业", "制药工业", "兽用药品")],
+    ("森林防火", "林长制", "林业巡护", "森林资源保护"): [
+        ("林业", "生态公益林", "防护林"),
+        ("生态环境", "生态治理工程", "森林生态修复"),
+    ],
+    ("软件开发", "管理系统", "数据平台", "APP", "应用软件"): [("信软技术服务", "软件和信息技术", "软件开发")],
+    ("农产品种植", "农业种植", "农作物种植", "粮食种植", "经济作物", "粮食作物"): [],
+}
+
 
 def clean_company_name(value: str) -> str:
     """清洗企业名称字段，去掉官网链接和多余空白。"""
@@ -84,12 +174,12 @@ def audit_record(
             current_key = key
             current_score = score
             current_evidence = evidence
-        # 推荐分类只看外部证据文本，避免员工填错内容反向污染推荐结果。
         recommendation_score, recommendation_evidence = score_rule_group(group, "", "", business_scope)
+        recommendation_score += _alias_score_for_key(key, business_scope)
         if recommendation_score > best_score:
             best_key = key
             best_score = recommendation_score
-            best_evidence = recommendation_evidence
+            best_evidence = recommendation_evidence or _alias_evidence_for_key(key, business_scope)
 
     result = _base_result(record, "无法判断", current_score)
     result.company_name = company.company_name
@@ -125,7 +215,20 @@ def audit_record(
                 len(rules),
             )
             agent_result = classification_agent.classify(record, company, candidate_rules)
-            return _apply_agent_result(result, agent_result, grouped)
+            if _needs_full_category_review(agent_result) or _has_invalid_agent_category_path(agent_result, grouped):
+                logger.info(
+                    "classification_agent_full_review row=%s company=%s reason=%s",
+                    record.row_number,
+                    record.company_name,
+                    agent_result.reason,
+                )
+                agent_result = _classify_with_full_category_table(classification_agent, record, company, rules)
+                agent_result.reason = (
+                    f"已触发全量分类表复核：{agent_result.reason}"
+                    if agent_result.reason
+                    else "已触发全量分类表复核"
+                )
+            return _apply_agent_result(result, agent_result, grouped, best_key, best_score)
         except Exception as exc:
             logger.exception(
                 "classification_agent_failed 大模型分类 Agent 调用失败 row=%s company=%s error=%s",
@@ -208,8 +311,8 @@ def _matches_entered_category_path(key: tuple[str, str, str], category: str, sub
         return False
     return any(
         (category == level1 and item in {level2, level3})
-        # 兼容历史数据：旧模板里“一级分类”可能实际填写的是内部二级品类。
         or (category == level2 and item == level3)
+        or (category == level1 and level2 == category and item == level3)
         for item in subcategories
     )
 
@@ -248,58 +351,449 @@ def _candidate_rules_for_agent(
     evidence_topk: int | None = None,
 ) -> list[CategoryRule]:
     if top_k is None:
-        top_k = int(os.getenv("AUDIT_LLM_CANDIDATE_TOPK", "30"))
+        top_k = int(os.getenv("AUDIT_LLM_CANDIDATE_TOPK", "80"))
     if entered_level1_expand_topk is None:
-        entered_level1_expand_topk = int(os.getenv("AUDIT_LLM_ENTERED_LEVEL1_EXPAND_TOPK", "10"))
+        entered_level1_expand_topk = int(os.getenv("AUDIT_LLM_ENTERED_LEVEL1_EXPAND_TOPK", "0"))
     if evidence_topk is None:
-        evidence_topk = int(os.getenv("AUDIT_LLM_EVIDENCE_TOPK", "20"))
+        evidence_topk = int(os.getenv("AUDIT_LLM_EVIDENCE_TOPK", "60"))
     if top_k <= 0 or not grouped:
         return rules
 
+    ranked_keys = _rank_candidate_keys(grouped, record, business_scope)
+    selected_keys: list[tuple[str, str, str]] = []
+    evidence_limit = min(max(evidence_topk, 0), top_k)
+    evidence_keys = [key for score, _index, key in ranked_keys if score > 0][:evidence_limit]
+    _extend_unique_keys(selected_keys, evidence_keys, limit=top_k)
+
+    exact_keys = _entered_exact_candidate_keys(grouped, record, business_scope)
+    exact_limit = max(0, min(len(exact_keys), top_k - len(selected_keys)))
+    _extend_unique_keys(selected_keys, exact_keys[:exact_limit], limit=top_k)
+
+    entered_level_keys = _ranked_entered_level_candidates(ranked_keys, record, entered_level1_expand_topk)
+    _extend_unique_keys(selected_keys, entered_level_keys, limit=top_k)
+
+    if not selected_keys:
+        _extend_unique_keys(selected_keys, [key for _score, _index, key in ranked_keys], limit=top_k)
+
+    candidate_rules: list[CategoryRule] = []
+    for key in selected_keys:
+        candidate_rules.extend(grouped.get(key, []))
+    return candidate_rules or rules
+
+
+def _needs_full_category_review(agent_result) -> bool:
+    matched_keywords = getattr(agent_result, "matched_keywords", None) or []
+    parts = [
+        getattr(agent_result, "audit_result", ""),
+        getattr(agent_result, "reason", ""),
+        getattr(agent_result, "suggestion", ""),
+        getattr(agent_result, "matched_level1", ""),
+        getattr(agent_result, "matched_level2", ""),
+        getattr(agent_result, "matched_level3", ""),
+        getattr(agent_result, "matched_module", ""),
+        " ".join(str(keyword) for keyword in matched_keywords),
+    ]
+    text = " ".join(part for part in parts if part)
+    return any(word in text for word in FULL_CATEGORY_REVIEW_TRIGGER_WORDS)
+
+
+def _has_invalid_agent_category_path(
+    agent_result,
+    grouped: dict[tuple[str, str, str], list[CategoryRule]],
+) -> bool:
+    matched_level1 = getattr(agent_result, "matched_level1", "")
+    matched_level2 = getattr(agent_result, "matched_level2", "")
+    matched_level3 = getattr(agent_result, "matched_level3", "")
+    if not matched_level1 or not matched_level2:
+        return False
+    return not _agent_category_path_exists(grouped, matched_level1, matched_level2, matched_level3)
+
+
+def _classify_with_full_category_table(
+    classification_agent,
+    record: EmployeeRecord,
+    company: CompanyInfo,
+    rules: list[CategoryRule],
+):
+    max_chars = int(os.getenv("AUDIT_LLM_FULL_REVIEW_MAX_CATEGORY_CHARS", "80000"))
+    sentinel = object()
+    previous_max_chars = getattr(classification_agent, "max_category_chars", sentinel)
+    if previous_max_chars is sentinel:
+        return classification_agent.classify(record, company, rules)
+    try:
+        classification_agent.max_category_chars = max_chars
+        return classification_agent.classify(record, company, rules)
+    finally:
+        classification_agent.max_category_chars = previous_max_chars
+
+
+def _rank_candidate_keys(
+    grouped: dict[tuple[str, str, str], list[CategoryRule]],
+    record: EmployeeRecord,
+    business_scope: str,
+) -> list[tuple[int, int, tuple[str, str, str]]]:
     scored_keys: list[tuple[int, int, tuple[str, str, str]]] = []
     for index, (key, group) in enumerate(grouped.items()):
         evidence_score, _ = score_rule_group(group, "", "", business_scope)
-        entered_score, _ = score_rule_group(group, record.category, record.subcategory, business_scope)
-        path_boost = 40 if _matches_entered_category_path(key, record.category, record.subcategory) else 0
+        retrieval_score = _retrieval_keyword_score(group, business_scope)
+        alias_score = _alias_score_for_key(key, business_scope)
+        entered_text_score = _entered_text_support_score(key, record, business_scope)
         text_boost = sum(8 for level in key if level and level in business_scope)
-        scored_keys.append((evidence_score + entered_score + path_boost + text_boost, -index, key))
+        score = evidence_score + retrieval_score + alias_score + entered_text_score + text_boost
+        scored_keys.append((score, -index, key))
+    return sorted(scored_keys, key=lambda item: (item[0], item[1]), reverse=True)
 
-    ranked_keys = sorted(scored_keys, key=lambda item: (item[0], item[1]), reverse=True)
-    selected_keys: list[tuple[str, str, str]] = []
-    _extend_unique_keys(selected_keys, _entered_exact_candidate_keys(grouped, record))
-    _extend_unique_keys(
-        selected_keys,
-        _ranked_entered_level_candidates(ranked_keys, record, entered_level1_expand_topk),
+
+def _retrieval_keyword_score(group: list[CategoryRule], business_scope: str) -> int:
+    score = 0
+    for rule in group:
+        for keyword in rule.keywords:
+            if not keyword or keyword not in business_scope:
+                continue
+            if rule.module_name in LOW_SIGNAL_RETRIEVAL_MODULES and keyword in GENERIC_RETRIEVAL_WORDS:
+                continue
+            score += 16 if rule.module_name not in LOW_SIGNAL_RETRIEVAL_MODULES else 6
+    return min(score, 64)
+
+
+def _alias_score_for_key(key: tuple[str, str, str], business_scope: str) -> int:
+    if not business_scope:
+        return 0
+    score = 0
+    if _key_matches_fertilizer_path(key):
+        score += _fertilizer_alias_score(business_scope)
+    equipment_target = _equipment_target_for_key(key)
+    if equipment_target:
+        score += _equipment_alias_score(equipment_target, business_scope)
+    if _key_matches_consulting_path(key):
+        score += _consulting_alias_score(business_scope)
+    if _key_matches_software_path(key):
+        score += _software_alias_score(business_scope)
+    exhibition_target = _exhibition_target_for_key(key)
+    if exhibition_target:
+        score += _exhibition_alias_score(exhibition_target, business_scope)
+    engineering_target = _engineering_target_for_key(key)
+    if engineering_target:
+        score += _engineering_alias_score(engineering_target, key, business_scope)
+    material_target = _material_target_for_key(key)
+    if material_target:
+        score += _material_alias_score(material_target, business_scope)
+    for aliases, targets in EVIDENCE_ALIASES.items():
+        if not any(alias in business_scope for alias in aliases):
+            continue
+        if targets:
+            if key in targets:
+                score += 80
+        elif _key_matches_agriculture_path(key) and not _has_fertilizer_primary_business(business_scope):
+            score += 40
+    return score
+
+
+def _alias_evidence_for_key(key: tuple[str, str, str], business_scope: str) -> list[str]:
+    hits = []
+    if _key_matches_fertilizer_path(key):
+        hits.extend(word for word in sorted(FERTILIZER_STRONG_WORDS | FERTILIZER_WEAK_WORDS) if word in business_scope)
+    equipment_target = _equipment_target_for_key(key)
+    if equipment_target and _equipment_alias_score(equipment_target, business_scope) > 0:
+        hits.extend(word for word in _equipment_evidence_words(equipment_target, business_scope) if word in business_scope)
+    if _key_matches_consulting_path(key) and _consulting_alias_score(business_scope) > 0:
+        hits.extend(word for word in sorted(CONSULTING_CONTEXT_WORDS, key=lambda item: (-len(item), item)) if word in business_scope)
+    if _key_matches_software_path(key) and _software_alias_score(business_scope) > 0:
+        hits.extend(word for word in sorted(SOFTWARE_CONTEXT_WORDS, key=lambda item: (-len(item), item)) if word in business_scope)
+    exhibition_target = _exhibition_target_for_key(key)
+    if exhibition_target and _exhibition_alias_score(exhibition_target, business_scope) > 0:
+        hits.extend(word for word in sorted(EXHIBITION_CONTEXT_WORDS, key=lambda item: (-len(item), item)) if word in business_scope)
+    engineering_target = _engineering_target_for_key(key)
+    if engineering_target and _engineering_alias_score(engineering_target, key, business_scope) > 0:
+        hits.extend(word for word in sorted(ENGINEERING_CONTEXT_WORDS, key=lambda item: (-len(item), item)) if word in business_scope)
+    material_target = _material_target_for_key(key)
+    if material_target and _material_alias_score(material_target, business_scope) > 0:
+        hits.extend(word for word in sorted(MATERIAL_CONTEXT_WORDS, key=lambda item: (-len(item), item)) if word in business_scope)
+    for aliases, targets in EVIDENCE_ALIASES.items():
+        if targets and key not in targets:
+            continue
+        if not targets and not _key_matches_agriculture_path(key):
+            continue
+        hits.extend(alias for alias in aliases if alias in business_scope)
+    return [f"经营范围关键词：{'、'.join(hits[:6])}"] if hits else []
+
+
+def _key_matches_fertilizer_path(key: tuple[str, str, str]) -> bool:
+    level_text = "".join(key)
+    return "化肥" in level_text
+
+
+def _fertilizer_alias_score(business_scope: str) -> int:
+    if _has_fertilizer_primary_business(business_scope):
+        return 180
+    if any(word in business_scope for word in FERTILIZER_STRONG_WORDS):
+        return 120
+    if not any(word in business_scope for word in FERTILIZER_WEAK_WORDS):
+        return 0
+    if any(word in business_scope for word in EQUIPMENT_CONTEXT_WORDS):
+        return 12
+    if any(word in business_scope for word in ["研发", "生产", "销售", "制造", "经营", "农资"]):
+        return 42
+    return 20
+
+
+def _key_matches_agriculture_path(key: tuple[str, str, str]) -> bool:
+    return any(part in {"农业", "种植业", "粮食作物", "经济作物", "蔬菜作物", "水果作物"} for part in key)
+
+
+def _equipment_target_for_key(key: tuple[str, str, str]) -> str:
+    level_text = "".join(key)
+    for _domain_words, target in EQUIPMENT_DOMAIN_TARGETS:
+        if target in level_text:
+            return target
+    return ""
+
+
+def _equipment_alias_score(target: str, business_scope: str) -> int:
+    if not _has_equipment_primary_business_for_target(target, business_scope):
+        return 0
+    return 180
+
+
+def _key_matches_consulting_path(key: tuple[str, str, str]) -> bool:
+    return "技术咨询" in "".join(key)
+
+
+def _consulting_alias_score(business_scope: str) -> int:
+    if not _has_consulting_primary_business(business_scope):
+        return 0
+    if _has_direct_planting_business(business_scope) or _has_direct_livestock_or_fishery_business(business_scope):
+        return 20
+    return 150
+
+
+def _key_matches_software_path(key: tuple[str, str, str]) -> bool:
+    return key[0] == "信软技术服务" and key[1] in {"软件和信息技术", "互联网和相关服务"}
+
+
+def _software_alias_score(business_scope: str) -> int:
+    if not _has_software_primary_business(business_scope):
+        return 0
+    if "软件开发" in business_scope or "管理系统" in business_scope or "数据平台" in business_scope:
+        return 150
+    return 50
+
+
+def _exhibition_target_for_key(key: tuple[str, str, str]) -> str:
+    if key[0] != "会展服务":
+        return ""
+    return key[1]
+
+
+def _exhibition_alias_score(target: str, business_scope: str) -> int:
+    if not _has_exhibition_primary_business(business_scope):
+        return 0
+    domain_words = _domain_words_for_target(EXHIBITION_DOMAIN_TARGETS, target)
+    if domain_words and any(word in business_scope for word in domain_words):
+        return 170
+    return 60
+
+
+def _engineering_target_for_key(key: tuple[str, str, str]) -> str:
+    level_text = "".join(key)
+    if key[0] in {"机械设备厂", "建材厂", "会展服务", "信软技术服务"}:
+        return ""
+    for _domain_words, target in ENGINEERING_DOMAIN_TARGETS:
+        if target in level_text or (target == "输变电工程" and "输变电" in level_text):
+            return target
+    return ""
+
+
+def _engineering_alias_score(target: str, key: tuple[str, str, str], business_scope: str) -> int:
+    if not _has_engineering_primary_business(business_scope):
+        return 0
+    domain_words = _domain_words_for_target(ENGINEERING_DOMAIN_TARGETS, target)
+    if domain_words and any(word in business_scope for word in domain_words):
+        if target == "水产养殖" and key[0] != "农业工程":
+            return 80
+        return 150
+    return 0
+
+
+def _material_target_for_key(key: tuple[str, str, str]) -> str:
+    level_text = "".join(key)
+    for _domain_words, target in MATERIAL_DOMAIN_TARGETS:
+        if target in level_text:
+            return target
+    return ""
+
+
+def _material_alias_score(target: str, business_scope: str) -> int:
+    if not _has_material_primary_business(business_scope):
+        return 0
+    domain_words = _domain_words_for_target(MATERIAL_DOMAIN_TARGETS, target)
+    if domain_words and any(word in business_scope for word in domain_words):
+        return 160
+    return 0
+
+
+def _entered_text_support_score(key: tuple[str, str, str], record: EmployeeRecord, business_scope: str) -> int:
+    if not _matches_entered_category_path(key, record.category, record.subcategory):
+        return 0
+    if _key_matches_agriculture_path(key) and _has_fertilizer_primary_business(business_scope):
+        return 28 if _has_direct_planting_business(business_scope) else 0
+    if _key_matches_agriculture_path(key) and _has_consulting_primary_business(business_scope):
+        return 28 if _has_direct_planting_business(business_scope) else 0
+    if _key_matches_agriculture_path(key) and _has_non_direct_business_primary(business_scope):
+        return 28 if _has_direct_planting_business(business_scope) else 0
+    if _key_matches_livestock_or_fishery_path(key) and _has_equipment_primary_business_for_target("农林牧渔机械", business_scope):
+        return 28 if _has_direct_livestock_or_fishery_business(business_scope) else 0
+    if _key_matches_livestock_or_fishery_path(key) and _has_consulting_primary_business(business_scope):
+        return 28 if _has_direct_livestock_or_fishery_business(business_scope) else 0
+    if _key_matches_livestock_or_fishery_path(key) and _has_non_direct_business_primary(business_scope):
+        return 28 if _has_direct_livestock_or_fishery_business(business_scope) else 0
+    if _key_matches_health_service_path(key) and _has_non_direct_business_primary(business_scope):
+        return 0
+    support_words = [record.category, *_split_category_values(record.subcategory)]
+    direct_hits = [word for word in support_words if word and word in business_scope]
+    if direct_hits:
+        return 36
+    if _agriculture_evidence_supports_entered(record, business_scope):
+        return 28
+    return 0
+
+
+def _agriculture_evidence_supports_entered(record: EmployeeRecord, business_scope: str) -> bool:
+    if _has_fertilizer_primary_business(business_scope) and not _has_direct_planting_business(business_scope):
+        return False
+    if _has_consulting_primary_business(business_scope) and not _has_direct_planting_business(business_scope):
+        return False
+    if record.category not in {"农业", "种植业"}:
+        return False
+    return any(word in business_scope for word in ["农产品种植", "农业活动", "农业", "农作物", "种植"])
+
+
+def _has_fertilizer_primary_business(business_scope: str) -> bool:
+    has_strong_word = any(word in business_scope for word in FERTILIZER_STRONG_WORDS)
+    has_weak_word = any(word in business_scope for word in FERTILIZER_WEAK_WORDS)
+    if not has_strong_word and not has_weak_word:
+        return False
+    if not has_strong_word and any(word in business_scope for word in EQUIPMENT_CONTEXT_WORDS):
+        return False
+    return any(word in business_scope for word in ["研发", "生产", "销售", "产品", "厂家", "核心产品", "解决方案"])
+
+
+def _has_direct_planting_business(business_scope: str) -> bool:
+    direct_patterns = [
+        r"(?:公司|企业|基地|主营|主要|专业|从事|致力于).{0,20}种植",
+        r"种植基地",
+        r"种植规模",
+        r"可种植",
+        r"种植面积",
+        r"农产品种植",
+    ]
+    return any(re.search(pattern, business_scope) for pattern in direct_patterns)
+
+
+def _key_matches_livestock_or_fishery_path(key: tuple[str, str, str]) -> bool:
+    level_text = "".join(key)
+    return any(word in level_text for word in ["畜牧", "水产", "渔业", "养殖"])
+
+
+def _has_equipment_primary_business_for_target(target: str, business_scope: str) -> bool:
+    if not any(word in business_scope for word in EQUIPMENT_CONTEXT_WORDS):
+        return False
+    domain_words = _equipment_domain_words_for_target(target)
+    if not any(word in business_scope for word in domain_words):
+        return False
+    return any(word in business_scope for word in ["研发", "生产", "制造", "销售", "产品", "厂家", "供应", "解决方案"])
+
+
+def _equipment_domain_words_for_target(target: str) -> set[str]:
+    for domain_words, candidate_target in EQUIPMENT_DOMAIN_TARGETS:
+        if candidate_target == target:
+            return domain_words
+    return set()
+
+
+def _equipment_evidence_words(target: str, business_scope: str) -> list[str]:
+    words = set(EQUIPMENT_CONTEXT_WORDS) | _equipment_domain_words_for_target(target) | {target}
+    return sorted(words, key=lambda word: (-len(word), word))
+
+
+def _has_direct_livestock_or_fishery_business(business_scope: str) -> bool:
+    direct_patterns = [
+        r"(?:公司|企业|基地|主营|主要|专业|从事|致力于).{0,20}(?:养殖|捕捞)",
+        r"养殖基地",
+        r"养殖场",
+        r"养殖面积",
+        r"水产养殖业务",
+        r"海水养殖",
+        r"淡水养殖",
+    ]
+    return any(re.search(pattern, business_scope) for pattern in direct_patterns)
+
+
+def _has_consulting_primary_business(business_scope: str) -> bool:
+    if not any(word in business_scope for word in CONSULTING_PRIMARY_WORDS):
+        return False
+    if _has_direct_planting_business(business_scope) or _has_direct_livestock_or_fishery_business(business_scope):
+        return False
+    return any(word in business_scope for word in ["提供", "从事", "主营", "主要", "专业", "致力于", "服务"])
+
+
+def _has_software_primary_business(business_scope: str) -> bool:
+    if not any(word in business_scope for word in SOFTWARE_CONTEXT_WORDS):
+        return False
+    return any(word in business_scope for word in SOFTWARE_PRIMARY_WORDS)
+
+
+def _has_exhibition_primary_business(business_scope: str) -> bool:
+    if not any(word in business_scope for word in EXHIBITION_CONTEXT_WORDS):
+        return False
+    return any(word in business_scope for word in ["举办", "承办", "组织", "服务", "展示", "参展", "展览"])
+
+
+def _has_engineering_primary_business(business_scope: str) -> bool:
+    if not any(word in business_scope for word in ENGINEERING_CONTEXT_WORDS):
+        return False
+    return any(word in business_scope for word in ["承接", "施工", "设计", "建设", "安装", "总包", "承包", "运维", "改造"])
+
+
+def _has_material_primary_business(business_scope: str) -> bool:
+    if not any(word in business_scope for word in MATERIAL_CONTEXT_WORDS):
+        return False
+    return any(word in business_scope for word in PRODUCT_PRIMARY_WORDS)
+
+
+def _has_non_direct_business_primary(business_scope: str) -> bool:
+    return any(
+        [
+            _has_software_primary_business(business_scope),
+            _has_exhibition_primary_business(business_scope),
+            _has_engineering_primary_business(business_scope),
+            _has_material_primary_business(business_scope),
+        ]
     )
-    _extend_unique_keys(selected_keys, [key for score, _index, key in ranked_keys if score > 0][:evidence_topk])
-    if not selected_keys:
-        _extend_unique_keys(selected_keys, [key for _score, _index, key in ranked_keys[:top_k]])
-    if len(selected_keys) > top_k:
-        mandatory_keys = _entered_exact_candidate_keys(grouped, record)
-        trimmed_keys: list[tuple[str, str, str]] = []
-        _extend_unique_keys(trimmed_keys, mandatory_keys)
-        remaining = max(top_k - len(trimmed_keys), 0)
-        _extend_unique_keys(trimmed_keys, [key for key in selected_keys if key not in set(mandatory_keys)][:remaining])
-        selected_keys = trimmed_keys
 
-    candidate_rules: list[CategoryRule] = []
-    selected_key_set = set(selected_keys)
-    for key, group in grouped.items():
-        if key in selected_key_set:
-            candidate_rules.extend(group)
-    return candidate_rules or rules
+
+def _key_matches_health_service_path(key: tuple[str, str, str]) -> bool:
+    return any(word in "".join(key) for word in ["卫生和社会工作", "医院", "社会工作"])
+
+
+def _domain_words_for_target(targets: list[tuple[set[str], str]], target: str) -> set[str]:
+    for domain_words, candidate_target in targets:
+        if candidate_target == target:
+            return domain_words
+    return set()
 
 
 def _entered_exact_candidate_keys(
     grouped: dict[tuple[str, str, str], list[CategoryRule]],
     record: EmployeeRecord,
+    business_scope: str = "",
 ) -> list[tuple[str, str, str]]:
-    return [
-        key
-        for key in grouped
-        if _matches_entered_category_path(key, record.category, record.subcategory)
-        or bool(record.subcategory and record.subcategory in key)
-    ]
+    subcategories = _split_category_values(record.subcategory)
+    is_multi_value = len(subcategories) > 1
+    keys = [key for key in grouped if _matches_entered_category_path(key, record.category, record.subcategory)]
+    if not is_multi_value:
+        return keys
+    return [key for key in keys if _entered_text_support_score(key, record, business_scope) > 0]
 
 
 def _ranked_entered_level_candidates(
@@ -320,15 +814,23 @@ def _key_matches_entered_primary_category(key: tuple[str, str, str], record: Emp
     return bool(record.category and record.category in {key[0], key[1]})
 
 
-def _extend_unique_keys(target: list[tuple[str, str, str]], keys: list[tuple[str, str, str]]) -> None:
+def _extend_unique_keys(target: list[tuple[str, str, str]], keys: list[tuple[str, str, str]], limit: int | None = None) -> None:
     seen = set(target)
     for key in keys:
+        if limit is not None and len(target) >= limit:
+            break
         if key not in seen:
             target.append(key)
             seen.add(key)
 
 
-def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[str, str, str], list[CategoryRule]]) -> AuditResult:
+def _apply_agent_result(
+    result: AuditResult,
+    agent_result,
+    grouped: dict[tuple[str, str, str], list[CategoryRule]],
+    fallback_key: tuple[str, str, str] | None = None,
+    fallback_score: int = 0,
+) -> AuditResult:
     matched_level1 = agent_result.matched_level1
     matched_level2 = agent_result.matched_level2
     matched_level3 = getattr(agent_result, "matched_level3", "")
@@ -363,24 +865,32 @@ def _apply_agent_result(result: AuditResult, agent_result, grouped: dict[tuple[s
     if agent_result.audit_result == "错误":
         result.status = "错误"
         result.error_type = "语义分类不匹配"
-        result.suggestion = _suggestion_if_changed(result, _level1_level2_suggestion(agent_result.suggestion, matched_text))
+        result.suggestion = _valid_suggestion_if_changed(result, grouped, _level1_level2_suggestion(agent_result.suggestion, matched_text))
         if matched_text and not matched_key_exists:
             result.status = "疑似错误"
             result.error_type = "语义分类需复核"
             result.reason += "；模型返回的建议分类未在内部分类表中精确命中，需要人工复核"
             result.needs_review = True
+        if not result.suggestion and fallback_key and fallback_score >= 35:
+            result.suggestion = _fallback_suggestion_if_changed(result, fallback_key)
+            if result.suggestion:
+                result.reason += "；模型建议无效，已根据外部证据召回结果补充建议修正"
         return result
 
     if agent_result.audit_result == "无法判断":
         result.status = "无法判断"
         result.error_type = "语义无法判断"
         result.suggestion = _suggestion_if_changed(result, _level1_level2_suggestion(agent_result.suggestion, matched_text))
+        if not result.suggestion:
+            _apply_fallback_suggestion(result, fallback_key, fallback_score)
         result.needs_review = True
         return result
 
     result.status = "疑似错误"
     result.error_type = "语义证据不足"
-    result.suggestion = _suggestion_if_changed(result, _level1_level2_suggestion(agent_result.suggestion, matched_text))
+    result.suggestion = _valid_suggestion_if_changed(result, grouped, _level1_level2_suggestion(agent_result.suggestion, matched_text))
+    if not result.suggestion:
+        _apply_fallback_suggestion(result, fallback_key, fallback_score)
     result.needs_review = True
     return result
 
@@ -393,6 +903,45 @@ def _suggestion_if_changed(result: AuditResult, suggestion: str) -> str:
     if _normalize_category_path(value) == _normalize_category_path(f"{result.original_category} / {result.original_subcategory}"):
         return ""
     return value
+
+
+def _apply_fallback_suggestion(
+    result: AuditResult,
+    fallback_key: tuple[str, str, str] | None,
+    fallback_score: int,
+) -> None:
+    if not fallback_key or fallback_score < 35:
+        return
+    suggestion = _fallback_suggestion_if_changed(result, fallback_key)
+    if not suggestion:
+        return
+    result.suggestion = suggestion
+    result.reason += "；已根据外部证据召回结果补充建议修正"
+
+
+def _fallback_suggestion_if_changed(result: AuditResult, fallback_key: tuple[str, str, str]) -> str:
+    fallback_level1_level2 = _normalize_category_path(f"{fallback_key[0]} / {fallback_key[1]}")
+    original_level1_level2 = _normalize_category_path(f"{result.original_category} / {result.original_subcategory}")
+    if fallback_level1_level2 == original_level1_level2:
+        return ""
+    return _suggestion_if_changed(result, f"{fallback_key[0]} / {fallback_key[1]} / {fallback_key[2]}")
+
+
+def _valid_suggestion_if_changed(
+    result: AuditResult,
+    grouped: dict[tuple[str, str, str], list[CategoryRule]],
+    suggestion: str,
+) -> str:
+    value = _suggestion_if_changed(result, suggestion)
+    if not value:
+        return ""
+    parts = _split_suggestion_parts(value)
+    if len(parts) < 2:
+        return ""
+    level1, level2 = parts[0], parts[1]
+    if any(key[0] == level1 and key[1] == level2 for key in grouped):
+        return value
+    return ""
 
 
 def _normalize_category_path(value: str) -> str:

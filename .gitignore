@@ -14,6 +14,7 @@ debug.log
 storage/uploads/*
 storage/outputs/*
 storage/cache/*
+storage/crawl4ai/
 storage/category_rules.json
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep

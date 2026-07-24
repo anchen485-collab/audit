@@ -31,7 +31,8 @@ def _build_category_file(path: Path):
     wb.save(path)
 
 
-def test_audit_workflow_writes_important_logs(tmp_path, caplog):
+def test_audit_workflow_writes_important_logs(tmp_path, caplog, monkeypatch):
+    monkeypatch.setenv("AUDIT_LLM_AGENT_ENABLED", "false")
     employee_file = tmp_path / "employee.xlsx"
     category_file = tmp_path / "category.xlsx"
     _build_employee_file(employee_file)
@@ -51,12 +52,15 @@ def test_audit_workflow_writes_important_logs(tmp_path, caplog):
     messages = [record.getMessage() for record in caplog.records]
     assert any("audit_workflow_start" in message for message in messages)
     assert any("audit_read_employee_done" in message for message in messages)
-    assert any("audit_query_company_done" in message for message in messages)
+    assert any("pipeline_crawl_start" in message for message in messages)
+    assert any("pipeline_crawl_done" in message for message in messages)
+    assert any("pipeline_audit_summary" in message for message in messages)
     assert any("audit_export_done" in message for message in messages)
     assert any("audit_workflow_done" in message for message in messages)
     assert any("audit_trace_stage_done" in message and "stage=read_employee" in message for message in messages)
+    assert any("audit_trace_stage_done" in message and "stage=pipeline_audit" in message for message in messages)
     assert any("audit_trace_stage_done" in message and "stage=audit_workflow" in message for message in messages)
-    assert any("audit_query_company_timing" in message and "duration_ms=" in message for message in messages)
+    assert any("pipeline_crawl_done" in message and "duration_ms=" in message for message in messages)
     assert any("total_duration_ms=" in message for message in messages)
 
 

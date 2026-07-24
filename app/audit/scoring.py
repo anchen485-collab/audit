@@ -3,6 +3,9 @@ from collections import defaultdict
 from app.core.models import CategoryRule
 
 
+LOW_SIGNAL_MODULES = {"环节"}
+
+
 def contains_any(text: str, words: list[str]) -> list[str]:
     """返回在文本中出现过的关键词。"""
     return [word for word in words if word and word in text]
@@ -39,7 +42,7 @@ def score_rule_group(
 
     all_keywords = []
     for rule in rules:
-        if rule.module_name == "环节":
+        if rule.module_name in LOW_SIGNAL_MODULES:
             continue
         all_keywords.extend(rule.keywords)
 
