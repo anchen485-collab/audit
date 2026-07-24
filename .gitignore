@@ -6,12 +6,15 @@ __pycache__/
 .env
 .env.*
 !.env.example
-docs/*.xlsx
+.crawl4ai/
+debug.log
+*.xlsx
 
-storage/uploads/*
-storage/outputs/*
-storage/cache/*
-storage/category_rules.json
-!storage/uploads/.gitkeep
-!storage/outputs/.gitkeep
-!storage/cache/.gitkeep
+# audit 子项目内部由 audit/.gitignore 管理
+audit/storage/uploads/*
+audit/storage/outputs/*
+audit/storage/cache/*
+audit/storage/category_rules.json
+!audit/storage/uploads/.gitkeep
+!audit/storage/outputs/.gitkeep
+!audit/storage/cache/.gitkeep
