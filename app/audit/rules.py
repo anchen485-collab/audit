@@ -249,14 +249,14 @@ def audit_record(
         result.needs_review = True
         return result
 
-    if current_key and current_score >= 80:
+    if current_key and current_score >= 70:
         result.status = "正确"
         result.confidence = current_score
         result.reason = "；".join(current_evidence) or "分类和外部证据匹配"
         result.needs_review = False
         return result
 
-    if current_key and current_score >= 60 and _has_business_keyword_evidence(current_evidence):
+    if current_key and current_score >= 50 and _has_business_keyword_evidence(current_evidence):
         result.status = "正确"
         result.confidence = current_score
         result.error_type = "低置信度匹配"
@@ -268,7 +268,7 @@ def audit_record(
         result.needs_review = True
         return result
 
-    if best_key and best_score >= 35 and (not current_key or current_score < 60):
+    if best_key and best_score >= 35 and (not current_key or current_score < 50):
         result.status = "错误"
         result.confidence = max(best_score, 60)
         result.error_type = "细分错误"
