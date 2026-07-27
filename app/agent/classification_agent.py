@@ -95,6 +95,7 @@ class ClassificationAgent:
         classify_start = perf_counter()
         category_text = format_category_rules_for_agent(rules, self.max_category_chars)
         evidence_text = (company.business_scope or "")[: self.max_evidence_chars]
+        is_full_category_table = bool(getattr(self, "full_category_review", False))
         messages = [
             {
                 "role": "system",
@@ -115,7 +116,7 @@ class ClassificationAgent:
             },
             {
                 "role": "user",
-                "content": _build_user_prompt(record, company, category_text, evidence_text),
+                "content": _build_user_prompt(record, company, category_text, evidence_text, is_full_category_table),
             },
         ]
         try:
@@ -214,7 +215,22 @@ def parse_agent_result(data: dict[str, Any]) -> AgentClassificationResult:
     )
 
 
-def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_text: str, evidence_text: str) -> str:
+def _build_user_prompt(
+    record: EmployeeRecord,
+    company: CompanyInfo,
+    category_text: str,
+    evidence_text: str,
+    is_full_category_table: bool = False,
+) -> str:
+    category_table_note = (
+        "注意：下面的内部分类表是完整分类表。不要再以“候选未包含”“候选召回不足”为理由降级判断；"
+        "如果外部证据明确支持完整分类表中的另一分类，且员工录入分类与企业实际业务不符，应判定为错误并给出建议分类。"
+        if is_full_category_table
+        else (
+            "注意：下面的内部分类表是从完整规则库召回的候选子集，不一定是完整分类表；不要据此断言完整规则库中不存在某个分类。\n"
+            "如果员工录入分类没有出现在候选子集中，但外部证据支持它，请标记为需要复核，并说明“候选召回可能不足”，不要直接判定为内部分类不存在。"
+        )
+    )
     return f"""
 请基于“内部分类表”和“外部证据文本”判断员工录入分类是否正确。
 员工录入的细分可能是内部二级品类，也可能是内部三级品类；请结合内部分类表判断它命中哪一级。
@@ -234,8 +250,7 @@ def _build_user_prompt(record: EmployeeRecord, company: CompanyInfo, category_te
 外部证据文本：
 {evidence_text}
 
-注意：下面的内部分类表是从完整规则库召回的候选子集，不一定是完整分类表；不要据此断言完整规则库中不存在某个分类。
-如果员工录入分类没有出现在候选子集中，但外部证据支持它，请标记为需要复核，并说明“候选召回可能不足”，不要直接判定为内部分类不存在。
+{category_table_note}
 
 内部分类表：
 {category_text}

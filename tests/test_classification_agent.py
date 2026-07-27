@@ -135,6 +135,38 @@ def test_classification_agent_prompt_does_not_include_stage():
     assert "销售" not in user_prompt
 
 
+def test_classification_agent_prompt_marks_full_category_review_table():
+    client = CaptureChatClient()
+    agent = ClassificationAgent(client)
+    agent.full_category_review = True
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="相阳",
+        category="种植业",
+        subcategory="粮食作物",
+        company_raw="测试企业",
+    )
+    company = CompanyInfo(
+        query_name="测试企业",
+        company_name="测试企业",
+        business_scope="公司简介显示主营氮肥生产销售。",
+        status="",
+        source="website",
+        success=True,
+    )
+
+    agent.classify(
+        record,
+        company,
+        [CategoryRule("石油化工", "化学与化工工程", "化肥", "类型", ["氮肥", "化肥"])],
+    )
+    user_prompt = client.messages[1]["content"]
+
+    assert "下面的内部分类表是完整分类表" in user_prompt
+    assert "不要再以“候选未包含”“候选召回不足”为理由降级判断" in user_prompt
+
+
 def test_classification_agent_writes_timing_log(caplog):
     client = CaptureChatClient()
     agent = ClassificationAgent(client)

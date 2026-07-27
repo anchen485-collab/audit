@@ -10,9 +10,32 @@ logger = logging.getLogger(__name__)
 
 FULL_CATEGORY_REVIEW_TRIGGER_WORDS = (
     "候选召回不足",
+    "候选召回可能不足",
+    "候选子集",
+    "候选分类未包含",
+    "候选未包含",
+    "未召回",
     "内部分类表未包含",
     "无法判断",
     "高风险错误",
+)
+
+UNUSABLE_EXTERNAL_EVIDENCE_PATTERNS = (
+    r"404",
+    r"HTTP\s*40[034]",
+    r"官网.{0,12}(?:无法访问|无法获取|404|页面不存在)",
+    r"网页.{0,12}(?:无法访问|无法获取|404|页面不存在)",
+    r"页面.{0,12}(?:不存在|无法访问|404)",
+    r"WAF",
+    r"拦截",
+    r"访问.{0,12}(?:受限|被拒|拒绝|禁止)",
+    r"(?:验证码|安全验证|人机验证)",
+    r"爬取.{0,12}(?:失败|异常|不到)",
+    r"无法获取.{0,20}(?:企业实际业务|企业业务信息|实际业务|业务信息|外部证据)",
+    r"外部证据.{0,20}(?:缺失|为空|无法获取|不可用|不足)",
+    r"缺乏.{0,12}外部证据支持",
+    r"无法确认.{0,30}(?:业务方向|是否覆盖|是否从事|实际业务)",
+    r"未提供.{0,30}(?:实际种植作物|具体信息|业务信息)",
 )
 
 GENERIC_RETRIEVAL_WORDS = {
@@ -223,6 +246,7 @@ def audit_record(
                     agent_result.reason,
                 )
                 agent_result = _classify_with_full_category_table(classification_agent, record, company, rules)
+                agent_result = _normalize_full_review_agent_result(agent_result, best_key, best_score)
                 agent_result.reason = (
                     f"已触发全量分类表复核：{agent_result.reason}"
                     if agent_result.reason
@@ -438,7 +462,13 @@ def _needs_full_category_review(agent_result) -> bool:
         " ".join(str(keyword) for keyword in matched_keywords),
     ]
     text = " ".join(part for part in parts if part)
-    return any(word in text for word in FULL_CATEGORY_REVIEW_TRIGGER_WORDS)
+    if any(word in text for word in FULL_CATEGORY_REVIEW_TRIGGER_WORDS):
+        return True
+    return bool(
+        re.search(r"(?:候选|子集).{0,20}(?:召回|未包含|不包含|不足|仅包含)", text)
+        or re.search(r"召回.{0,20}不足", text)
+        or re.search(r"未召回", text)
+    )
 
 
 def _has_invalid_agent_category_path(
@@ -462,13 +492,48 @@ def _classify_with_full_category_table(
     max_chars = int(os.getenv("AUDIT_LLM_FULL_REVIEW_MAX_CATEGORY_CHARS", "80000"))
     sentinel = object()
     previous_max_chars = getattr(classification_agent, "max_category_chars", sentinel)
+    previous_full_review = getattr(classification_agent, "full_category_review", sentinel)
     if previous_max_chars is sentinel:
         return classification_agent.classify(record, company, rules)
     try:
         classification_agent.max_category_chars = max_chars
+        classification_agent.full_category_review = True
         return classification_agent.classify(record, company, rules)
     finally:
         classification_agent.max_category_chars = previous_max_chars
+        if previous_full_review is sentinel:
+            try:
+                delattr(classification_agent, "full_category_review")
+            except AttributeError:
+                pass
+        else:
+            classification_agent.full_category_review = previous_full_review
+
+
+def _normalize_full_review_agent_result(agent_result, fallback_key: tuple[str, str, str] | None, fallback_score: int):
+    if getattr(agent_result, "audit_result", "") != "疑似错误":
+        return agent_result
+    text = " ".join(
+        part
+        for part in [
+            getattr(agent_result, "reason", ""),
+            getattr(agent_result, "suggestion", ""),
+            getattr(agent_result, "matched_level1", ""),
+            getattr(agent_result, "matched_level2", ""),
+            getattr(agent_result, "matched_level3", ""),
+        ]
+        if part
+    )
+    has_clear_alternative = any(word in text for word in ["更符合企业实际", "更匹配企业实际", "更符合", "明显支持"])
+    has_entered_mismatch = any(word in text for word in ["未涉及", "不涉及", "并非", "而非", "不符", "与公司实际业务不符"])
+    if not (fallback_key and fallback_score >= 35 and has_clear_alternative and has_entered_mismatch):
+        return agent_result
+    agent_result.audit_result = "错误"
+    agent_result.confidence = max(getattr(agent_result, "confidence", 0), 80)
+    agent_result.needs_review = False
+    if not getattr(agent_result, "suggestion", ""):
+        agent_result.suggestion = f"{fallback_key[0]} / {fallback_key[1]} / {fallback_key[2]}"
+    return agent_result
 
 
 def _rank_candidate_keys(
@@ -918,7 +983,12 @@ def _apply_agent_result(
             result.error_type = "语义分类需复核"
             result.reason += "；模型返回的建议分类未在内部分类表中精确命中，需要人工复核"
             result.needs_review = True
-        if not result.suggestion and fallback_key and fallback_score >= 35:
+        if (
+            not result.suggestion
+            and fallback_key
+            and fallback_score >= 35
+            and _can_apply_fallback_suggestion(result, agent_result)
+        ):
             result.suggestion = _fallback_suggestion_if_changed(result, fallback_key)
             if result.suggestion:
                 result.reason += "；模型建议无效，已根据外部证据召回结果补充建议修正"
@@ -927,17 +997,17 @@ def _apply_agent_result(
     if agent_result.audit_result == "无法判断":
         result.status = "无法判断"
         result.error_type = "语义无法判断"
-        result.suggestion = _suggestion_if_changed(result, _level1_level2_suggestion(agent_result.suggestion, matched_text))
+        result.suggestion = _suggestion_if_changed(result, _level1_level2_suggestion(agent_result.suggestion))
         if not result.suggestion:
-            _apply_fallback_suggestion(result, fallback_key, fallback_score)
+            _apply_fallback_suggestion(result, fallback_key, fallback_score, agent_result)
         result.needs_review = True
         return result
 
     result.status = "疑似错误"
     result.error_type = "语义证据不足"
-    result.suggestion = _valid_suggestion_if_changed(result, grouped, _level1_level2_suggestion(agent_result.suggestion, matched_text))
+    result.suggestion = _valid_suggestion_if_changed(result, grouped, _level1_level2_suggestion(agent_result.suggestion))
     if not result.suggestion:
-        _apply_fallback_suggestion(result, fallback_key, fallback_score)
+        _apply_fallback_suggestion(result, fallback_key, fallback_score, agent_result)
     result.needs_review = True
     return result
 
@@ -956,14 +1026,29 @@ def _apply_fallback_suggestion(
     result: AuditResult,
     fallback_key: tuple[str, str, str] | None,
     fallback_score: int,
+    agent_result=None,
 ) -> None:
     if not fallback_key or fallback_score < 35:
+        return
+    if not _can_apply_fallback_suggestion(result, agent_result):
         return
     suggestion = _fallback_suggestion_if_changed(result, fallback_key)
     if not suggestion:
         return
     result.suggestion = suggestion
     result.reason += "；已根据外部证据召回结果补充建议修正"
+
+
+def _can_apply_fallback_suggestion(result: AuditResult, agent_result=None) -> bool:
+    text_parts = [
+        result.reason,
+        result.business_scope,
+        getattr(agent_result, "reason", "") if agent_result else "",
+    ]
+    text = " ".join(part for part in text_parts if part)
+    if not text:
+        return False
+    return not any(re.search(pattern, text, re.IGNORECASE) for pattern in UNUSABLE_EXTERNAL_EVIDENCE_PATTERNS)
 
 
 def _fallback_suggestion_if_changed(result: AuditResult, fallback_key: tuple[str, str, str]) -> str:

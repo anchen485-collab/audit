@@ -1136,6 +1136,198 @@ def test_audit_record_adds_fertilizer_fallback_when_agent_returns_retrieval_gap(
     assert "补充建议修正" in result.reason
 
 
+def test_audit_record_converts_clear_full_review_mismatch_to_error():
+    record = EmployeeRecord(
+        row_number=14,
+        date="7月24日",
+        name="安宁",
+        category="种植业",
+        subcategory="粮食作物",
+        company_raw="示例肥料有限公司",
+    )
+    company = CompanyInfo(
+        query_name="示例肥料有限公司",
+        company_name="示例肥料有限公司",
+        business_scope="企业是化肥生产商，主要业务为掺混肥料、氮肥等研发生产销售，未涉及直接种植作物。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "粮食作物", "类型", ["水稻", "小麦"]),
+        CategoryRule("石油化工", "化学与化工工程", "化肥", "类型", ["掺混肥料", "氮肥", "化肥"]),
+    ]
+    agent = FakeClassificationAgent(
+        [
+            AgentClassificationResult(
+                audit_result="疑似错误",
+                confidence=65,
+                reason="候选召回不足，未包含化肥相关分类。",
+                needs_review=True,
+            ),
+            AgentClassificationResult(
+                audit_result="疑似错误",
+                confidence=72,
+                reason=(
+                    "员工录入一级为种植业，细分是种植业下的二级品类。"
+                    "但外部证据显示企业是化肥生产商，主要业务为掺混肥料、氮肥等研发生产销售，"
+                    "未涉及直接种植作物。内部分类表中存在石油化工/化学与化工工程/化肥，"
+                    "更符合企业实际。"
+                ),
+                needs_review=True,
+            ),
+        ],
+        candidate_topk=1,
+        entered_level1_expand_topk=0,
+        evidence_topk=1,
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert len(agent.calls) == 2
+    assert result.status == "错误"
+    assert result.suggestion == "石油化工 / 化学与化工工程"
+    assert result.confidence >= 80
+    assert result.needs_review is False
+    assert "已触发全量分类表复核" in result.reason
+
+
+def test_audit_record_does_not_add_fallback_suggestion_when_website_evidence_unavailable():
+    record = EmployeeRecord(
+        row_number=14,
+        date="7月24日",
+        name="安宁",
+        category="种植业",
+        subcategory="水果作物",
+        company_raw="示例农业有限公司",
+    )
+    company = CompanyInfo(
+        query_name="示例农业有限公司",
+        company_name="示例农业有限公司",
+        business_scope="官网404，无法获取企业实际业务信息。企业名称暗示农业、蔬菜作物、种植相关。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "水果作物", "类型", ["水果"]),
+        CategoryRule("农业", "种植业", "蔬菜作物", "类型", ["农业", "蔬菜作物", "种植"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            audit_result="无法判断",
+            confidence=30,
+            reason="官网404，无法获取企业实际业务信息，仅能看到企业名称暗示与农业相关。",
+            suggestion="",
+            needs_review=True,
+        ),
+        candidate_topk=2,
+        entered_level1_expand_topk=0,
+        evidence_topk=2,
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "无法判断"
+    assert result.suggestion == ""
+    assert "补充建议修正" not in result.reason
+    assert result.needs_review is True
+
+
+def test_audit_record_does_not_add_fallback_suggestion_when_waf_blocks_evidence():
+    record = EmployeeRecord(
+        row_number=15,
+        date="7月24日",
+        name="安宁",
+        category="渔业",
+        subcategory="淡水养殖",
+        company_raw="宁夏大北农科技实业有限公司",
+    )
+    company = CompanyInfo(
+        query_name="宁夏大北农科技实业有限公司",
+        company_name="宁夏大北农科技实业有限公司",
+        business_scope="外部证据文本显示WAF拦截，无法获取企业业务信息。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("渔业", "淡水养殖", "鱼类", "类型", ["淡水养殖", "水产养殖"]),
+        CategoryRule("农业", "种植业", "蔬菜作物", "类型", ["农业"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            audit_result="无法判断",
+            confidence=30,
+            reason=(
+                "已触发全量分类表复核：外部证据文本显示WAF拦截，无法获取企业业务信息，"
+                "无法确认是否从事淡水养殖业务。根据内部分类表，一级'渔业'和细分'淡水养殖'匹配，"
+                "但缺乏外部证据支持。"
+            ),
+            suggestion="",
+            needs_review=True,
+        ),
+        candidate_topk=2,
+        entered_level1_expand_topk=0,
+        evidence_topk=2,
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "无法判断"
+    assert result.suggestion == ""
+    assert "补充建议修正" not in result.reason
+    assert result.needs_review is True
+
+
+def test_audit_record_does_not_use_matched_text_as_suggestion_when_agent_cannot_confirm_scope():
+    record = EmployeeRecord(
+        row_number=16,
+        date="7月24日",
+        name="安宁",
+        category="种植业",
+        subcategory="粮食作物,经济作物,蔬菜作物,水果作物",
+        company_raw="示例智慧农业有限公司",
+    )
+    company = CompanyInfo(
+        query_name="示例智慧农业有限公司",
+        company_name="示例智慧农业有限公司",
+        business_scope="外部证据文本主要关于化肥、施肥、智慧农业，未提供企业实际种植作物的具体信息。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("种植业", "粮食作物", "谷类", "类型", ["水稻", "小麦"]),
+        CategoryRule("种植业", "蔬菜作物", "叶菜类", "类型", ["蔬菜"]),
+        CategoryRule("石油化工", "化学与化工工程", "化肥", "类型", ["化肥", "施肥"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="种植业",
+            matched_level2="粮食作物,经济作物,蔬菜作物,水果作物",
+            audit_result="无法判断",
+            confidence=40,
+            reason=(
+                "已触发全量分类表复核：外部证据文本主要关于化肥、施肥、智慧农业，"
+                "未提供企业实际种植作物的具体信息，无法确认其是否覆盖粮食作物、经济作物、蔬菜作物、水果作物等业务方向。"
+            ),
+            suggestion="",
+            needs_review=True,
+        ),
+        candidate_topk=3,
+        entered_level1_expand_topk=0,
+        evidence_topk=3,
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "无法判断"
+    assert result.suggestion == ""
+    assert "补充建议修正" not in result.reason
+    assert result.needs_review is True
+
+
 def test_audit_record_runs_full_category_review_when_agent_reports_retrieval_gap():
     record = EmployeeRecord(
         row_number=14,
@@ -1244,6 +1436,123 @@ def test_audit_record_runs_full_category_review_when_agent_returns_invalid_path(
     assert result.status == "正确"
     assert "已触发全量分类表复核" in result.reason
     assert "未在内部分类表中精确存在" not in result.reason
+
+
+def test_audit_record_runs_full_category_review_when_agent_mentions_candidate_subset_gap():
+    record = EmployeeRecord(
+        row_number=16,
+        date="7月24日",
+        name="安宁",
+        category="种植业",
+        subcategory="蔬菜作物,水果作物",
+        company_raw="示例种植有限公司",
+    )
+    company = CompanyInfo(
+        query_name="示例种植有限公司",
+        company_name="示例种植有限公司",
+        business_scope="企业主营番茄、西葫芦等蔬菜作物种植。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "蔬菜作物", "类型", ["番茄", "西葫芦", "蔬菜"]),
+        CategoryRule("农业", "种植业", "水果作物", "类型", ["苹果", "梨", "水果"]),
+        CategoryRule("石油化工", "化学与化工工程", "化肥", "类型", ["化肥"]),
+    ]
+    agent = FakeClassificationAgent(
+        [
+            AgentClassificationResult(
+                matched_level1="农业",
+                matched_level2="种植业",
+                matched_level3="蔬菜作物",
+                audit_result="错误",
+                confidence=85,
+                reason="'水果作物'未出现在内部分类表的候选子集中，外部证据也未提及水果作物。",
+                suggestion="农业 / 种植业 / 蔬菜作物",
+                needs_review=False,
+            ),
+            AgentClassificationResult(
+                matched_level1="农业",
+                matched_level2="种植业",
+                matched_level3="蔬菜作物",
+                audit_result="错误",
+                confidence=88,
+                reason="全量分类表中存在水果作物，但外部证据仅支持蔬菜作物，未支持水果作物。",
+                suggestion="农业 / 种植业 / 蔬菜作物",
+                needs_review=False,
+            ),
+        ],
+        candidate_topk=1,
+        entered_level1_expand_topk=0,
+        evidence_topk=1,
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert len(agent.calls) == 2
+    assert agent.calls[1][2] == rules
+    assert result.status == "错误"
+    assert result.suggestion == "农业 / 种植业"
+    assert "已触发全量分类表复核" in result.reason
+    assert "候选子集" not in result.reason
+
+
+def test_audit_record_runs_full_category_review_when_agent_mentions_unrecalled_fishery():
+    record = EmployeeRecord(
+        row_number=17,
+        date="7月24日",
+        name="安宁",
+        category="渔业",
+        subcategory="淡水养殖,海水养殖",
+        company_raw="示例水产养殖有限公司",
+    )
+    company = CompanyInfo(
+        query_name="示例水产养殖有限公司",
+        company_name="示例水产养殖有限公司",
+        business_scope="企业从事水产养殖、河蟹养殖和鱼类活动。",
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "蔬菜作物", "类型", ["番茄", "蔬菜"]),
+        CategoryRule("渔业", "淡水养殖", "河蟹", "类型", ["水产养殖", "河蟹养殖"]),
+        CategoryRule("渔业", "海水养殖", "鱼类", "类型", ["水产养殖", "鱼类"]),
+    ]
+    agent = FakeClassificationAgent(
+        [
+            AgentClassificationResult(
+                audit_result="疑似错误",
+                confidence=65,
+                reason=(
+                    "员工录入的一级分类为'渔业'，但内部分类表候选子集仅包含'种植业'相关分类，"
+                    "未召回'渔业'及其二级分类'淡水养殖'和'海水养殖'。"
+                    "外部证据明显支持企业涉及淡水养殖和海水养殖业务，需复核候选召回是否不足。"
+                ),
+                needs_review=True,
+            ),
+            AgentClassificationResult(
+                matched_level1="渔业",
+                matched_level2="淡水养殖,海水养殖",
+                audit_result="正确",
+                confidence=90,
+                reason="全量分类表中存在渔业下的淡水养殖和海水养殖，且外部证据支持。",
+                needs_review=False,
+            ),
+        ],
+        candidate_topk=1,
+        entered_level1_expand_topk=0,
+        evidence_topk=1,
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert len(agent.calls) == 2
+    assert agent.calls[1][2] == rules
+    assert result.status == "正确"
+    assert "已触发全量分类表复核" in result.reason
+    assert "未召回'渔业'" not in result.reason
 
 
 def test_level1_level2_suggestion_extracts_labeled_second_level_without_third_level():
