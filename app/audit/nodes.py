@@ -20,6 +20,17 @@ from app.excel.result_writer import write_audit_result_excel
 logger = logging.getLogger(__name__)
 
 
+def _configured_worker_count(total: int, env_name: str, default: int) -> int:
+    if total <= 0:
+        return 0
+    try:
+        configured = int(os.environ.get(env_name, str(default)))
+    except ValueError:
+        logger.warning("audit_invalid_concurrency 并发配置不是整数 env=%s value=%s", env_name, os.environ.get(env_name))
+        configured = default
+    return min(total, max(configured, 1))
+
+
 def read_employee_node(state: AuditGraphState) -> AuditGraphState:
     records = read_employee_excel(state["employee_file"])
     logger.info("audit_read_employee_done 员工录入读取完成 file=%s record_count=%s", state["employee_file"], len(records))
@@ -33,130 +44,106 @@ def read_category_node(state: AuditGraphState) -> AuditGraphState:
     return {"rules": rules, "steps": state.get("steps", []) + [f"读取分类规则 {len(rules)} 条"]}
 
 
-def query_company_node(state: AuditGraphState) -> AuditGraphState:
-    provider: CompanyInfoProvider = state["provider"]
-    infos = {}
-    for record in state["records"]:
-        company_name = clean_company_name(record.company_raw)
-        if company_name not in infos:
-            record.company_name = company_name
-            logger.info(
-                "audit_query_company_start 开始查询企业 row=%s company=%s provider=%s website_url=%s",
-                record.row_number,
-                company_name,
-                provider.__class__.__name__,
-                record.website_url,
-            )
-            query_start = perf_counter()
-            infos[company_name] = provider.get_company_info_for_record(record)
-            info = infos[company_name]
-            query_duration_ms = elapsed_ms(query_start)
-            if info.success:
-                logger.info(
-                    "audit_query_company_success 企业信息获取成功 company=%s source=%s scope_length=%s",
-                    company_name,
-                    info.source,
-                    len(info.business_scope or ""),
-                )
-            else:
-                logger.warning(
-                    "audit_query_company_failed 企业信息获取失败 company=%s source=%s error=%s",
-                    company_name,
-                    info.source,
-                    info.error,
-                )
-            logger.info(
-                "audit_query_company_timing 企业查询耗时 row=%s company=%s provider=%s success=%s duration_ms=%.2f",
-                record.row_number,
-                company_name,
-                provider.__class__.__name__,
-                info.success,
-                query_duration_ms,
-            )
-    return {"company_infos": infos, "steps": state.get("steps", []) + [f"查询企业 {len(infos)} 家"]}
-
-
-def match_rules_node(state: AuditGraphState) -> AuditGraphState:
-    infos = state["company_infos"]
-    logger.info("audit_query_company_done 企业查询完成 company_count=%s", len(infos))
-    results = []
-    classification_agent = build_classification_agent_from_env()
-    if classification_agent:
-        logger.info("classification_agent_enabled 大模型分类 Agent 已启用")
-    for record in state["records"]:
-        company_name = clean_company_name(record.company_raw)
-        results.append(audit_record(record, state["rules"], infos.get(company_name), classification_agent=classification_agent))
-    return {"results": results, "steps": state.get("steps", []) + [f"完成审计 {len(results)} 条"]}
-
-
-def pipeline_audit_node(state: AuditGraphState) -> AuditGraphState:
-    """流水线审计节点：先串行爬取所有企业，再用 ThreadPoolExecutor 并发调用 AI 审计。
-
-    相比原来的 query_company_node + match_rules_node 两个串行节点，
-    此节点在审计阶段使用多线程并发，显著减少总耗时。
-    """
+def query_company_info_node(state: AuditGraphState) -> AuditGraphState:
+    """并发获取去重后的企业信息。"""
     provider: CompanyInfoProvider = state["provider"]
     records = state["records"]
-    rules = state["rules"]
-    classification_agent = build_classification_agent_from_env()
-    if classification_agent:
-        logger.info("classification_agent_enabled 大模型分类 Agent 已启用")
-
-    pipeline_start = perf_counter()
     infos: dict[str, object] = {}
-    infos_lock = Lock()
-    crawl_phase_ms = 0.0
 
-    # 阶段一：并发爬取（爬虫是网络 I/O 密集型，多线程可显著提速）
-    max_crawl_workers = min(len(records), int(os.environ.get("WEBSITE_CRAWL_CONCURRENCY", "5")))
+    if not records:
+        logger.info("query_company_info_empty 员工记录为空，跳过企业查询")
+        return {"company_infos": infos, "steps": state.get("steps", []) + ["查询企业 0 家"]}
+
+    unique_records: dict[str, object] = {}
+    for record in records:
+        company_name = clean_company_name(record.company_raw)
+        record.company_name = company_name
+        unique_records.setdefault(company_name, record)
+
+    node_start = perf_counter()
+    max_workers = _configured_worker_count(len(unique_records), "WEBSITE_CRAWL_CONCURRENCY", 5)
+    infos_lock = Lock()
     logger.info(
-        "pipeline_crawl_concurrent_start 并发爬取企业开始 total_count=%s max_workers=%s",
-        len(records), max_crawl_workers,
+        "query_company_info_concurrent_start 并发查询企业开始 total_count=%s unique_company_count=%s max_workers=%s",
+        len(records),
+        len(unique_records),
+        max_workers,
     )
 
-    def crawl_one(record_idx: int, record: object) -> None:
-        company_name = clean_company_name(record.company_raw)
-        with infos_lock:
-            if company_name in infos:
-                return
-            record.company_name = company_name
+    def query_one(company_name: str, record: object) -> None:
         logger.info(
-            "pipeline_crawl_start 开始爬取企业 row=%s company=%s url=%s thread=%s",
-            record.row_number, company_name, record.website_url, threading.current_thread().name,
+            "query_company_info_start 开始查询企业 row=%s company=%s provider=%s website_url=%s thread=%s",
+            record.row_number,
+            company_name,
+            provider.__class__.__name__,
+            record.website_url,
+            threading.current_thread().name,
         )
-        crawl_start = perf_counter()
+        query_start = perf_counter()
         info = provider.get_company_info_for_record(record)
-        crawl_duration = elapsed_ms(crawl_start)
+        query_duration_ms = elapsed_ms(query_start)
         with infos_lock:
             infos[company_name] = info
+        if info.success:
+            logger.info(
+                "query_company_info_success 企业信息获取成功 company=%s source=%s scope_length=%s",
+                company_name,
+                info.source,
+                len(info.business_scope or ""),
+            )
+        else:
+            logger.warning(
+                "query_company_info_failed 企业信息获取失败 company=%s source=%s error=%s",
+                company_name,
+                info.source,
+                info.error,
+            )
         logger.info(
-            "pipeline_crawl_done 企业爬取完成 row=%s company=%s success=%s duration_ms=%.2f thread=%s",
-            record.row_number, company_name, info.success, crawl_duration, threading.current_thread().name,
+            "audit_query_company_timing 企业查询耗时 row=%s company=%s provider=%s success=%s duration_ms=%.2f",
+            record.row_number,
+            company_name,
+            provider.__class__.__name__,
+            info.success,
+            query_duration_ms,
         )
 
-    with ThreadPoolExecutor(max_workers=max_crawl_workers) as executor:
-        futures = {executor.submit(crawl_one, i, rec): i for i, rec in enumerate(records)}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(query_one, company_name, record): company_name for company_name, record in unique_records.items()}
         for future in as_completed(futures):
             future.result()  # 确保异常被抛出
 
-    crawl_phase_ms = elapsed_ms(pipeline_start)
     logger.info(
-        "pipeline_crawl_concurrent_done 并发爬取企业完成 total_count=%s unique_company_count=%s crawl_phase_ms=%.2f",
-        len(records), len(infos), crawl_phase_ms,
+        "query_company_info_concurrent_done 并发查询企业完成 total_count=%s unique_company_count=%s duration_ms=%.2f",
+        len(records),
+        len(infos),
+        elapsed_ms(node_start),
     )
+    return {"company_infos": infos, "steps": state.get("steps", []) + [f"查询企业 {len(infos)} 家"]}
 
-    # 阶段二：并发审计
+
+def audit_records_node(state: AuditGraphState) -> AuditGraphState:
+    """基于已查询的企业信息执行规则审计和可选 LLM 审计。"""
+    records = state["records"]
+    rules = state["rules"]
+    infos = state.get("company_infos", {})
+    classification_agent = build_classification_agent_from_env()
+    if classification_agent:
+        logger.info("classification_agent_enabled 大模型分类 Agent 已启用")
+
+    node_start = perf_counter()
+    if not records:
+        logger.info("audit_records_empty 员工记录为空，跳过审计")
+        return {"results": [], "steps": state.get("steps", []) + ["完成审计 0 条"]}
+
     if not classification_agent:
-        # 无 AI 时串行审计（关键词匹配很快，不需要并发）
         results = []
         for record in records:
             company_name = clean_company_name(record.company_raw)
             results.append(audit_record(record, rules, infos.get(company_name)))
-        audit_phase_ms = elapsed_ms(pipeline_start) - crawl_phase_ms
     else:
-        max_workers = min(len(records), int(os.environ.get("WEBSITE_CRAWL_CONCURRENCY", "5")))
+        max_workers = _configured_worker_count(len(records), "AUDIT_LLM_CONCURRENCY", 4)
         logger.info(
-            "pipeline_audit_concurrent_start 并发 AI 审计开始 total_count=%s max_workers=%s",
+            "audit_records_concurrent_start 并发 AI 审计开始 total_count=%s max_workers=%s",
             len(records), max_workers,
         )
         results: list = [None] * len(records)
@@ -168,7 +155,7 @@ def pipeline_audit_node(state: AuditGraphState) -> AuditGraphState:
             company_name = clean_company_name(record.company_raw)
             info = infos.get(company_name)
             t0 = perf_counter()
-            logger.info("pipeline_audit_start 开始审计 row=%s company=%s thread=%s", record.row_number, company_name, threading.current_thread().name)
+            logger.info("audit_records_start 开始审计 row=%s company=%s thread=%s", record.row_number, company_name, threading.current_thread().name)
             result = audit_record(record, rules, info, classification_agent=classification_agent)
             t = elapsed_ms(t0)
             with stats_lock:
@@ -176,7 +163,7 @@ def pipeline_audit_node(state: AuditGraphState) -> AuditGraphState:
             with results_lock:
                 results[record_idx] = result
             logger.info(
-                "pipeline_audit_done 审计完成 row=%s company=%s status=%s duration_ms=%.2f thread=%s",
+                "audit_records_done 审计完成 row=%s company=%s status=%s duration_ms=%.2f thread=%s",
                 record.row_number, company_name, result.status, t, threading.current_thread().name,
             )
 
@@ -185,22 +172,20 @@ def pipeline_audit_node(state: AuditGraphState) -> AuditGraphState:
             for future in as_completed(futures):
                 future.result()  # 确保异常被抛出
 
-        audit_phase_ms = elapsed_ms(pipeline_start) - crawl_phase_ms
         logger.info(
-            "pipeline_audit_concurrent_done 并发 AI 审计完成 count=%s "
+            "audit_records_concurrent_done 并发 AI 审计完成 count=%s "
             "avg_audit_ms=%.1f max_audit_ms=%.1f",
             len(results),
             sum(audit_times) / len(audit_times) if audit_times else 0,
             max(audit_times) if audit_times else 0,
         )
 
-    total_ms = elapsed_ms(pipeline_start)
     logger.info(
-        "pipeline_audit_summary 流水线审计耗时汇总 total_count=%s "
-        "流水线总耗时=%.2fms 爬虫阶段=%.2fms 审计阶段=%.2fms",
-        len(records), total_ms, crawl_phase_ms, audit_phase_ms,
+        "audit_records_summary 审计耗时汇总 total_count=%s duration_ms=%.2f",
+        len(records),
+        elapsed_ms(node_start),
     )
-    return {"results": results, "company_infos": infos, "steps": state.get("steps", []) + [f"流水线审计 {len(results)} 条"]}
+    return {"results": results, "steps": state.get("steps", []) + [f"完成审计 {len(results)} 条"]}
 
 
 def build_summary_node(state: AuditGraphState) -> AuditGraphState:

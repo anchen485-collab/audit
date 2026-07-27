@@ -1136,6 +1136,101 @@ def test_audit_record_adds_fertilizer_fallback_when_agent_returns_retrieval_gap(
     assert "补充建议修正" in result.reason
 
 
+def test_audit_record_overrides_agent_correct_when_crop_words_are_fertilizer_application_targets():
+    record = EmployeeRecord(
+        row_number=15,
+        date="7月24日",
+        name="安鹏",
+        category="种植业",
+        subcategory="粮食作物,经济作物,蔬菜作物,水果作物",
+        company_raw="河南泰格茂生物科技有限公司",
+    )
+    company = CompanyInfo(
+        query_name="河南泰格茂生物科技有限公司",
+        company_name="河南泰格茂生物科技有限公司",
+        business_scope=(
+            "公司主要从事钛肥、水溶肥、复合肥等肥料的研发、生产和销售。"
+            "产品适用于粮食作物、蔬菜、瓜果、棉花等作物高效施肥。"
+        ),
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("种植业", "粮食作物", "谷类", "类型", ["水稻", "小麦", "粮食作物"]),
+        CategoryRule("种植业", "经济作物", "纤维类", "类型", ["棉花"]),
+        CategoryRule("种植业", "蔬菜作物", "叶菜类", "类型", ["蔬菜"]),
+        CategoryRule("种植业", "水果作物", "瓜果类", "类型", ["瓜果"]),
+        CategoryRule("石油化工", "化学与化工工程", "化肥", "类型", ["钛肥", "水溶肥", "复合肥", "化肥"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="种植业",
+            matched_level2="粮食作物,经济作物,蔬菜作物,水果作物",
+            audit_result="正确",
+            confidence=90,
+            reason=(
+                "员工录入的一级分类为种植业，细分为粮食作物、经济作物、蔬菜作物、水果作物，"
+                "外部证据中明确提及粮食作物、蔬菜、瓜果、棉花等。"
+            ),
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "错误"
+    assert result.error_type == "语义分类不匹配"
+    assert result.suggestion == "石油化工 / 化学与化工工程 / 化肥"
+    assert "产品适用对象" in result.reason
+    assert result.needs_review is False
+
+
+def test_audit_record_overrides_agent_correct_for_special_fertilizer_company_serving_crops():
+    record = EmployeeRecord(
+        row_number=16,
+        date="7月24日",
+        name="安鹏",
+        category="种植业",
+        subcategory="粮食作物,经济作物,蔬菜作物,水果作物",
+        company_raw="上海曲辰生物科技有限公司",
+    )
+    company = CompanyInfo(
+        query_name="上海曲辰生物科技有限公司",
+        company_name="上海曲辰生物科技有限公司",
+        business_scope=(
+            "企业为特种肥料企业，专注植物营养产品研发、生产、销售和服务。"
+            "产品服务于多种作物，提供农业生产管理综合解决方案。"
+        ),
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("种植业", "粮食作物", "谷类", "类型", ["粮食作物"]),
+        CategoryRule("种植业", "经济作物", "纤维类", "类型", ["经济作物"]),
+        CategoryRule("种植业", "蔬菜作物", "叶菜类", "类型", ["蔬菜"]),
+        CategoryRule("种植业", "水果作物", "瓜果类", "类型", ["水果"]),
+        CategoryRule("石油化工", "化学与化工工程", "化肥", "类型", ["肥料", "特种肥料", "植物营养产品"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="种植业",
+            matched_level2="粮食作物,经济作物,蔬菜作物,水果作物",
+            audit_result="正确",
+            confidence=88,
+            reason="企业为特种肥料企业，产品服务于多种作物，外部证据支持其业务覆盖种植业下的多个二级品类。",
+            needs_review=False,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "错误"
+    assert result.suggestion == "石油化工 / 化学与化工工程 / 化肥"
+    assert "作物名称更像产品适用对象" in result.reason
+
+
 def test_audit_record_converts_clear_full_review_mismatch_to_error():
     record = EmployeeRecord(
         row_number=14,

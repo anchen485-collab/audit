@@ -5,6 +5,7 @@ from time import perf_counter
 from app.DataCleaning import WebsiteTextCleaner
 from app.company.cache import CompanyInfoCache
 from app.company.provider import CompanyInfoProvider
+from app.company.text_repair import looks_mojibake, repair_compacted_text
 from app.company.website_crawler import WebsiteCrawler
 from app.core.models import CompanyInfo, EmployeeRecord
 from app.core.trace import elapsed_ms
@@ -113,7 +114,7 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             crawl_duration_ms,
         )
         clean_start = perf_counter()
-        source_text = WebsiteCrawler._repair_compacted_text(crawl_result.text)
+        source_text = repair_compacted_text(crawl_result.text)
         cleaned = self.text_cleaner.clean(source_text)
         clean_duration_ms = elapsed_ms(clean_start)
         business_scope, fallback_to_raw_text = self._business_scope_from_cleaned(cleaned.text, source_text)
@@ -180,8 +181,8 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
     def _upgrade_cached_info(self, record: EmployeeRecord, info: CompanyInfo) -> CompanyInfo:
         cleaning = info.raw.get("cleaning", {})
         source_text = info.raw.get("raw_crawl_text") or info.business_scope
-        repaired_source_text = WebsiteCrawler._repair_compacted_text(source_text)
-        cached_text_has_mojibake = WebsiteCrawler._looks_mojibake(info.business_scope) or WebsiteCrawler._looks_mojibake(source_text)
+        repaired_source_text = repair_compacted_text(source_text)
+        cached_text_has_mojibake = looks_mojibake(info.business_scope) or looks_mojibake(source_text)
         if cleaning.get("version") == self.text_cleaner.CLEANING_VERSION and not cached_text_has_mojibake and info.business_scope:
             return info
 
@@ -211,7 +212,7 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
         """清洗器无法识别英文证据时，保留原文，避免后续 Agent 没有证据可判断。"""
         if cleaned_text:
             return cleaned_text, False
-        fallback = WebsiteCrawler._repair_compacted_text(source_text)
+        fallback = repair_compacted_text(source_text)
         if self.text_cleaner._is_maintenance_text(fallback):
             return "", False
         return fallback, bool(fallback)

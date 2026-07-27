@@ -52,15 +52,16 @@ def test_audit_workflow_writes_important_logs(tmp_path, caplog, monkeypatch):
     messages = [record.getMessage() for record in caplog.records]
     assert any("audit_workflow_start" in message for message in messages)
     assert any("audit_read_employee_done" in message for message in messages)
-    assert any("pipeline_crawl_start" in message for message in messages)
-    assert any("pipeline_crawl_done" in message for message in messages)
-    assert any("pipeline_audit_summary" in message for message in messages)
+    assert any("query_company_info_start" in message for message in messages)
+    assert any("audit_query_company_timing" in message for message in messages)
+    assert any("audit_records_summary" in message for message in messages)
     assert any("audit_export_done" in message for message in messages)
     assert any("audit_workflow_done" in message for message in messages)
     assert any("audit_trace_stage_done" in message and "stage=read_employee" in message for message in messages)
-    assert any("audit_trace_stage_done" in message and "stage=pipeline_audit" in message for message in messages)
+    assert any("audit_trace_stage_done" in message and "stage=query_company_info" in message for message in messages)
+    assert any("audit_trace_stage_done" in message and "stage=audit_records" in message for message in messages)
     assert any("audit_trace_stage_done" in message and "stage=audit_workflow" in message for message in messages)
-    assert any("pipeline_crawl_done" in message and "duration_ms=" in message for message in messages)
+    assert any("audit_query_company_timing" in message and "duration_ms=" in message for message in messages)
     assert any("total_duration_ms=" in message for message in messages)
 
 

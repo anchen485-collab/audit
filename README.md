@@ -131,10 +131,10 @@ audit_upload_done
 
 常见判断方式：
 
-- `audit_trace_stage_done stage=query_company` 慢：通常是官网访问慢、目标网站阻塞或缓存未命中。
+- `audit_trace_stage_done stage=query_company_info` 慢：通常是官网访问慢、目标网站阻塞或缓存未命中。
 - `website_crawl_page_done` 慢：定位具体慢 URL，重点看 `duration_ms`、`depth`、`is_target`。
 - `website_crawl_done` 慢：说明单个官网总爬取耗时高，可以降低 `WEBSITE_CRAWL_MAX_PAGES` 或 `WEBSITE_CRAWL_MAX_DEPTH`。
-- `audit_trace_stage_done stage=match_rules` 慢：通常是大模型分类 Agent 调用耗时，继续看 `classification_agent_timing`。
+- `audit_trace_stage_done stage=audit_records` 慢：通常是大模型分类 Agent 调用耗时，继续看 `classification_agent_timing`。
 - `audit_upload_done` 慢：表示从上传到导出整体耗时高，可用同一 `trace_id` 关联前面的阶段日志。
 
 推荐第一版排查配置：

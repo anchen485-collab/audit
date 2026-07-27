@@ -4,7 +4,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 from app.audit.summary import build_person_summary
-from app.company.website_crawler import WebsiteCrawler
+from app.company.text_repair import looks_mojibake, repair_compacted_text
 from app.core.models import AuditResult
 
 
@@ -105,7 +105,7 @@ def _style_sheet(ws):
 
 def _external_evidence_for_display(text: str) -> str:
     """导出前再做一次展示文本修复，避免 Excel 明细里残留爬虫乱码。"""
-    repaired = WebsiteCrawler._repair_compacted_text(text)
-    if WebsiteCrawler._looks_mojibake(repaired):
+    repaired = repair_compacted_text(text)
+    if looks_mojibake(repaired):
         return "外部证据文本编码异常，已隐藏乱码；请清理官网缓存后重新审计"
     return repaired

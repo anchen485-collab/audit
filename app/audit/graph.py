@@ -7,9 +7,10 @@ from uuid import uuid4
 from langgraph.graph import END, START, StateGraph
 
 from app.audit.nodes import (
+    audit_records_node,
     build_summary_node,
     export_result_node,
-    pipeline_audit_node,
+    query_company_info_node,
     read_category_node,
     read_employee_node,
 )
@@ -47,14 +48,16 @@ def build_audit_graph():
     workflow = StateGraph(AuditGraphState)
     workflow.add_node("read_employee", _timed_node("read_employee", read_employee_node))
     workflow.add_node("read_category", _timed_node("read_category", read_category_node))
-    workflow.add_node("pipeline_audit", _timed_node("pipeline_audit", pipeline_audit_node))
+    workflow.add_node("query_company_info", _timed_node("query_company_info", query_company_info_node))
+    workflow.add_node("audit_records", _timed_node("audit_records", audit_records_node))
     workflow.add_node("build_summary", _timed_node("build_summary", build_summary_node))
     workflow.add_node("export_result", _timed_node("export_result", export_result_node))
 
     workflow.add_edge(START, "read_employee")
     workflow.add_edge("read_employee", "read_category")
-    workflow.add_edge("read_category", "pipeline_audit")
-    workflow.add_edge("pipeline_audit", "build_summary")
+    workflow.add_edge("read_category", "query_company_info")
+    workflow.add_edge("query_company_info", "audit_records")
+    workflow.add_edge("audit_records", "build_summary")
     workflow.add_edge("build_summary", "export_result")
     workflow.add_edge("export_result", END)
     return workflow.compile()

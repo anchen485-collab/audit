@@ -47,7 +47,8 @@ def test_run_audit_workflow_exports_result_excel(tmp_path, monkeypatch):
     assert [item["stage"] for item in state["trace"]] == [
         "read_employee",
         "read_category",
-        "pipeline_audit",
+        "query_company_info",
+        "audit_records",
         "build_summary",
         "export_result",
         "audit_workflow",

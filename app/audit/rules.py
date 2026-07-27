@@ -3,123 +3,34 @@ import os
 import re
 
 from app.audit.scoring import group_rules, score_rule_group
+from app.audit.rule_constants import (
+    AGRI_EQUIPMENT_DOMAIN_WORDS,
+    CONSULTING_CONTEXT_WORDS,
+    CONSULTING_PRIMARY_WORDS,
+    ENGINEERING_CONTEXT_WORDS,
+    ENGINEERING_DOMAIN_TARGETS,
+    EQUIPMENT_CONTEXT_WORDS,
+    EQUIPMENT_DOMAIN_TARGETS,
+    EVIDENCE_ALIASES,
+    EXHIBITION_CONTEXT_WORDS,
+    EXHIBITION_DOMAIN_TARGETS,
+    FERTILIZER_STRONG_WORDS,
+    FERTILIZER_WEAK_WORDS,
+    FULL_CATEGORY_REVIEW_TRIGGER_WORDS,
+    GENERIC_RETRIEVAL_WORDS,
+    LIVESTOCK_SUBCATEGORY_MAP,
+    LOW_SIGNAL_RETRIEVAL_MODULES,
+    MATERIAL_CONTEXT_WORDS,
+    MATERIAL_DOMAIN_TARGETS,
+    PRODUCT_PRIMARY_WORDS,
+    SOFTWARE_CONTEXT_WORDS,
+    SOFTWARE_PRIMARY_WORDS,
+    UNUSABLE_EXTERNAL_EVIDENCE_PATTERNS,
+)
 from app.core.models import AuditResult, CategoryRule, CompanyInfo, EmployeeRecord
 
 
 logger = logging.getLogger(__name__)
-
-FULL_CATEGORY_REVIEW_TRIGGER_WORDS = (
-    "候选召回不足",
-    "候选召回可能不足",
-    "候选子集",
-    "候选分类未包含",
-    "候选未包含",
-    "未召回",
-    "内部分类表未包含",
-    "无法判断",
-    "高风险错误",
-)
-
-UNUSABLE_EXTERNAL_EVIDENCE_PATTERNS = (
-    r"404",
-    r"HTTP\s*40[034]",
-    r"官网.{0,12}(?:无法访问|无法获取|404|页面不存在)",
-    r"网页.{0,12}(?:无法访问|无法获取|404|页面不存在)",
-    r"页面.{0,12}(?:不存在|无法访问|404)",
-    r"WAF",
-    r"拦截",
-    r"访问.{0,12}(?:受限|被拒|拒绝|禁止)",
-    r"(?:验证码|安全验证|人机验证)",
-    r"爬取.{0,12}(?:失败|异常|不到)",
-    r"无法获取.{0,20}(?:企业实际业务|企业业务信息|实际业务|业务信息|外部证据)",
-    r"外部证据.{0,20}(?:缺失|为空|无法获取|不可用|不足)",
-    r"缺乏.{0,12}外部证据支持",
-    r"无法确认.{0,30}(?:业务方向|是否覆盖|是否从事|实际业务)",
-    r"未提供.{0,30}(?:实际种植作物|具体信息|业务信息)",
-)
-
-GENERIC_RETRIEVAL_WORDS = {
-    "业务",
-    "服务",
-    "经营",
-    "咨询",
-    "网站",
-    "会展",
-    "平台",
-    "系统",
-    "公司",
-    "企业",
-    "销售",
-    "加工",
-    "生产",
-}
-LOW_SIGNAL_RETRIEVAL_MODULES = {"环节", "生态", "全产业链"}
-FERTILIZER_STRONG_WORDS = {"钛肥", "化肥", "复合肥", "有机肥", "氮肥", "磷肥", "钾肥", "水溶肥", "微生物肥"}
-FERTILIZER_WEAK_WORDS = {"肥料", "肥业"}
-EQUIPMENT_CONTEXT_WORDS = {"设备", "装备", "机械", "仪器", "装置", "设施", "系统", "生产线", "包装机", "灌装", "输送"}
-CONSULTING_CONTEXT_WORDS = {"咨询", "顾问", "培训", "规划", "评估", "技术服务", "技术指导", "解决方案", "方案设计"}
-CONSULTING_PRIMARY_WORDS = {"咨询", "顾问", "培训", "技术服务", "技术指导"}
-SOFTWARE_CONTEXT_WORDS = {"软件", "系统", "平台", "APP", "小程序", "数字化", "信息化", "数据", "物联网", "管理系统", "监测平台"}
-SOFTWARE_PRIMARY_WORDS = {"开发", "建设", "研发", "运维", "集成", "提供", "平台", "系统"}
-EXHIBITION_CONTEXT_WORDS = {"展会", "展览", "博览会", "交易会", "论坛", "会务", "展台", "参展", "展示"}
-ENGINEERING_CONTEXT_WORDS = {"工程", "施工", "设计", "总包", "承包", "建设", "安装", "运维", "改造", "项目建设"}
-MATERIAL_CONTEXT_WORDS = {"材料", "建材", "制品", "涂料", "水泥", "混凝土", "玻璃", "陶瓷", "防水", "保温", "耐火", "密封"}
-PRODUCT_PRIMARY_WORDS = {"研发", "生产", "制造", "销售", "产品", "厂家", "供应"}
-AGRI_EQUIPMENT_DOMAIN_WORDS = {"水产", "水产养殖", "养殖", "渔业", "畜牧", "家禽", "家畜", "农林牧渔", "农业"}
-EQUIPMENT_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
-    (AGRI_EQUIPMENT_DOMAIN_WORDS, "农林牧渔机械"),
-    ({"医疗", "医院", "医用", "诊断", "康复", "医疗器械"}, "医疗设备"),
-    ({"化工", "化肥", "肥料", "石化", "橡胶", "塑料"}, "化工设备"),
-    ({"食品", "粮食", "水产品", "果蔬", "饮料", "肉类", "屠宰"}, "食品设备"),
-    ({"制药", "药品", "兽药", "中药", "生物药"}, "制药设备"),
-    ({"建筑", "工程建设", "施工"}, "建筑设备"),
-    ({"建材", "水泥", "玻璃", "陶瓷"}, "建材设备"),
-    ({"纺织", "服装", "面料"}, "纺织设备"),
-    ({"矿山", "采矿", "冶金", "钢铁", "有色金属"}, "采矿冶金设备"),
-]
-EXHIBITION_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
-    ({"农业", "农林", "水产", "畜牧", "渔业", "种植", "农资"}, "农林牧渔"),
-    ({"工业", "制造", "设备", "机械", "化工"}, "工业制造"),
-    ({"建筑", "建材", "家居", "装饰"}, "建筑家居"),
-    ({"能源", "化工", "石油", "电力", "光伏"}, "能源化工"),
-    ({"医疗", "健康", "医药", "医院", "器械"}, "医疗健康"),
-    ({"食品", "饮料", "农产品", "水产品"}, "食品饮料"),
-    ({"物流", "交通", "货运", "汽车"}, "交通物流"),
-    ({"信息", "科技", "软件", "互联网"}, "信息科技"),
-    ({"商业", "消费", "零售", "连锁"}, "商业消费"),
-    ({"文化", "教育", "娱乐", "文旅"}, "文化教育娱乐"),
-]
-ENGINEERING_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
-    ({"光伏", "太阳能"}, "光伏"),
-    ({"风电", "风力发电"}, "风电"),
-    ({"水电", "水力发电"}, "水电"),
-    ({"输变电", "变电站", "配电网", "特高压"}, "输变电工程"),
-    ({"绿化", "园林"}, "绿化工程"),
-    ({"水产养殖", "养殖工程"}, "水产养殖"),
-]
-MATERIAL_DOMAIN_TARGETS: list[tuple[set[str], str]] = [
-    ({"防水"}, "防水材料"),
-    ({"保温"}, "保温材料"),
-    ({"耐火"}, "耐火材料"),
-    ({"密封"}, "密封材料"),
-    ({"路面", "沥青"}, "路面材料"),
-    ({"水泥"}, "水泥"),
-    ({"混凝土"}, "混凝土"),
-    ({"玻璃"}, "玻璃"),
-    ({"陶瓷"}, "陶瓷"),
-    ({"涂料"}, "涂料"),
-    ({"医疗", "医用", "卫生"}, "卫生材料及医药用品"),
-    ({"化工", "化学"}, "化学制品"),
-]
-EVIDENCE_ALIASES: dict[tuple[str, ...], list[tuple[str, str, str]]] = {
-    ("兽药", "动物保健品", "动物药品"): [("医药工业", "制药工业", "兽用药品")],
-    ("森林防火", "林长制", "林业巡护", "森林资源保护"): [
-        ("林业", "生态公益林", "防护林"),
-        ("生态环境", "生态治理工程", "森林生态修复"),
-    ],
-    ("软件开发", "管理系统", "数据平台", "APP", "应用软件"): [("信软技术服务", "软件和信息技术", "软件开发")],
-    ("农产品种植", "农业种植", "农作物种植", "粮食种植", "经济作物", "粮食作物"): [],
-}
 
 
 def clean_company_name(value: str) -> str:
@@ -351,6 +262,7 @@ _LIVESTOCK_SUBCATEGORY_MAP: dict[str, set[str]] = {
 }
 
 
+
 def _matches_entered_category_path(key: tuple[str, str, str], category: str, subcategory: str) -> bool:
     """判断员工录入的一级分类和细分是否命中内部分类路径。
 
@@ -372,7 +284,7 @@ def _matches_entered_category_path(key: tuple[str, str, str], category: str, sub
             return True
         if is_livestock:
             # 畜牧业下启用等价映射
-            equivalents = _LIVESTOCK_SUBCATEGORY_MAP.get(item, set())
+            equivalents = LIVESTOCK_SUBCATEGORY_MAP.get(item, set())
             return target in equivalents
         return False
 
@@ -975,11 +887,18 @@ def _apply_agent_result(
             result.needs_review = True
             return result
         if matched_text and not matched_key_exists:
-            result.status = "疑似错误"
-            result.error_type = "语义分类需复核"
+            result.status = "错误"
+            result.error_type = "内部分类不存在"
             result.suggestion = _suggestion_if_changed(result, _level1_level2_suggestion(agent_result.suggestion, matched_text))
             result.reason += "；模型返回的一级/二级组合未在内部分类表中精确存在，不能判为正确"
             result.needs_review = True
+            return result
+        if _agent_correct_conflicts_with_fertilizer_primary_business(result, fallback_key, fallback_score):
+            result.status = "错误"
+            result.error_type = "语义分类不匹配"
+            result.suggestion = _fallback_suggestion_if_changed(result, fallback_key)
+            result.reason += "；外部证据显示企业主营肥料/化肥研发生产销售，作物名称更像产品适用对象，未见直接种植业务，不能判为种植业正确"
+            result.needs_review = False
             return result
         result.status = "正确"
         result.error_type = ""
@@ -1032,6 +951,20 @@ def _suggestion_if_changed(result: AuditResult, suggestion: str) -> str:
     if _normalize_category_path(value) == _normalize_category_path(f"{result.original_category} / {result.original_subcategory}"):
         return ""
     return value
+
+
+def _agent_correct_conflicts_with_fertilizer_primary_business(
+    result: AuditResult,
+    fallback_key: tuple[str, str, str] | None,
+    fallback_score: int,
+) -> bool:
+    if not fallback_key or fallback_score < 35:
+        return False
+    if not _key_matches_fertilizer_path(fallback_key):
+        return False
+    if result.original_category not in {"农业", "种植业"}:
+        return False
+    return _has_fertilizer_primary_business(result.business_scope) and not _has_direct_planting_business(result.business_scope)
 
 
 def _apply_fallback_suggestion(
