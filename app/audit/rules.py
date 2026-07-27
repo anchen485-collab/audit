@@ -372,11 +372,11 @@ def _needs_full_category_review(agent_result) -> bool:
         getattr(agent_result, "matched_module", ""),
         " ".join(str(keyword) for keyword in matched_keywords),
     ]
-    text = " ".join(part for part in parts if part)
     if any(word in text for word in FULL_CATEGORY_REVIEW_TRIGGER_WORDS):
         return True
     return bool(
-        re.search(r"(?:候选|子集).{0,20}(?:召回|未包含|不包含|不足|仅包含)", text)
+        re.search(r"内部分类表.{0,6}(?:无|没有|不存在|缺少|未找到)", text)
+        or re.search(r"(?:候选|子集).{0,20}(?:召回|未包含|不包含|不足|仅包含)", text)
         or re.search(r"召回.{0,20}不足", text)
         or re.search(r"未召回", text)
     )
@@ -901,15 +901,9 @@ def _apply_agent_result(
             result.error_type = "语义分类需复核"
             result.reason += "；模型返回的建议分类未在内部分类表中精确命中，需要人工复核"
             result.needs_review = True
-        if (
-            not result.suggestion
-            and fallback_key
-            and fallback_score >= 35
-            and _can_apply_fallback_suggestion(result, agent_result)
-        ):
-            result.suggestion = _fallback_suggestion_if_changed(result, fallback_key)
-            if result.suggestion:
-                result.reason += "；模型建议无效，已根据外部证据召回结果补充建议修正"
+        if not result.suggestion:
+            result.reason += "；agent 未给出有效建议修正，请人工复核"
+            result.needs_review = True
         return result
 
     if agent_result.audit_result == "无法判断":
