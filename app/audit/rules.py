@@ -327,6 +327,17 @@ def _has_business_keyword_evidence(evidence: list[str]) -> bool:
     return any(item.startswith("经营范围关键词：") for item in evidence)
 
 
+# 一级分类名称别名映射（员工惯用简称 → 内部分类表正式名称）
+_CATEGORY_ALIAS_MAP: dict[str, str] = {
+    "房建": "房屋建筑",
+}
+
+
+def _normalize_category_values(values: list[str]) -> list[str]:
+    """将员工录入的一级分类别名标准化为内部分类表正式名称。"""
+    return [_CATEGORY_ALIAS_MAP.get(v, v) for v in values]
+
+
 # 畜牧业下细分名称的等价映射（带"养殖"后缀与不带后缀视为等价）
 _LIVESTOCK_SUBCATEGORY_MAP: dict[str, set[str]] = {
     "家畜": {"家畜", "家畜养殖"},
@@ -343,11 +354,12 @@ _LIVESTOCK_SUBCATEGORY_MAP: dict[str, set[str]] = {
 def _matches_entered_category_path(key: tuple[str, str, str], category: str, subcategory: str) -> bool:
     """判断员工录入的一级分类和细分是否命中内部分类路径。
 
+    一级分类支持别名映射（如"房建"→"房屋建筑"）；
     当一级分类为"畜牧业"时，启用细分名称等价映射（如"家禽"↔"家禽养殖"）。
     """
     level1, level2, level3 = key
     subcategories = _split_category_values(subcategory)
-    categories = _split_category_values(category)
+    categories = _normalize_category_values(_split_category_values(category))
     if not subcategories or not categories:
         return False
 
@@ -922,7 +934,7 @@ def _ranked_entered_level_candidates(
 def _key_matches_entered_primary_category(key: tuple[str, str, str], record: EmployeeRecord) -> bool:
     if not record.category:
         return False
-    categories = _split_category_values(record.category)
+    categories = _normalize_category_values(_split_category_values(record.category))
     return any(cat in {key[0], key[1]} for cat in categories)
 
 
