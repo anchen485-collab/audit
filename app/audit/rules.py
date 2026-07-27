@@ -249,19 +249,6 @@ def _normalize_category_values(values: list[str]) -> list[str]:
     return [_CATEGORY_ALIAS_MAP.get(v, v) for v in values]
 
 
-# 畜牧业下细分名称的等价映射（带"养殖"后缀与不带后缀视为等价）
-_LIVESTOCK_SUBCATEGORY_MAP: dict[str, set[str]] = {
-    "家畜": {"家畜", "家畜养殖"},
-    "家畜养殖": {"家畜", "家畜养殖"},
-    "家禽": {"家禽", "家禽养殖"},
-    "家禽养殖": {"家禽", "家禽养殖"},
-    "水产": {"水产", "水产养殖"},
-    "水产养殖": {"水产", "水产养殖"},
-    "特种": {"特种", "特种养殖"},
-    "特种养殖": {"特种", "特种养殖"},
-}
-
-
 
 def _matches_entered_category_path(key: tuple[str, str, str], category: str, subcategory: str) -> bool:
     """判断员工录入的一级分类和细分是否命中内部分类路径。
