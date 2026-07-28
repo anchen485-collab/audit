@@ -69,6 +69,125 @@ def test_audit_record_marks_matching_scope_as_correct():
     assert result.needs_review is False
 
 
+def test_audit_record_marks_latin_language_evidence_as_semantic_review_when_rules_do_not_match_keywords():
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="Alex",
+        category="种植业",
+        subcategory="水果作物",
+        company_raw="Example Farm",
+    )
+    company = CompanyInfo(
+        query_name="Example Farm",
+        company_name="Example Farm",
+        business_scope=(
+            "Example Farm grows apples, pears, citrus fruit and other orchard crops. "
+            "The company operates planting bases and sells fresh agricultural products."
+        ),
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("农业", "种植业", "水果作物", "类型", ["苹果", "梨", "水果"]),
+    ]
+
+    result = audit_record(record, rules, company)
+
+    assert result.status == "无法判断"
+    assert result.error_type == "外文证据需语义复核"
+    assert "英文/外文" in result.reason
+    assert "只有部分匹配" not in result.reason
+    assert result.needs_review is True
+
+
+def test_audit_record_rewrites_agent_generic_partial_reason_for_latin_language_evidence():
+    record = EmployeeRecord(
+        row_number=3,
+        date="7月20日",
+        name="张佳玲",
+        category="渔业",
+        subcategory="淡水捕捞",
+        company_raw="Freshwater Fish Marketing Corporation",
+    )
+    company = CompanyInfo(
+        query_name="Freshwater Fish Marketing Corporation",
+        company_name="Freshwater Fish Marketing Corporation",
+        business_scope=(
+            "Home Page Source Freshwater Company Freshwater Fish Marketing Corporation "
+            "markets freshwater fish products and supports seafood distribution services."
+        ),
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("渔业", "淡水捕捞", "淡水鱼捕捞", "类型", ["淡水鱼", "捕捞"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            audit_result="疑似错误",
+            confidence=40,
+            reason="外部证据与当前分类只有部分匹配，建议人工复核",
+            suggestion="",
+            needs_review=True,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "疑似错误"
+    assert result.error_type == "外文证据需语义复核"
+    assert "英文/外文" in result.reason
+    assert "只有部分匹配" not in result.reason
+    assert result.needs_review is True
+
+
+def test_audit_record_rewrites_agent_error_branch_generic_partial_reason_for_latin_language_evidence():
+    record = EmployeeRecord(
+        row_number=4,
+        date="7月20日",
+        name="张佳玲",
+        category="渔业",
+        subcategory="海水捕捞",
+        company_raw="Archipelago Marine Research Ltd",
+    )
+    company = CompanyInfo(
+        query_name="Archipelago Marine Research Ltd",
+        company_name="Archipelago Marine Research Ltd",
+        business_scope=(
+            "Archipelago Data that Drives Decisions provides marine monitoring, fisheries data "
+            "services, electronic reporting and research support for ocean industries."
+        ),
+        status="",
+        source="website",
+        success=True,
+    )
+    rules = [
+        CategoryRule("渔业", "海水捕捞", "海洋捕捞", "类型", ["海洋捕捞", "远洋捕捞"]),
+    ]
+    agent = FakeClassificationAgent(
+        AgentClassificationResult(
+            matched_level1="渔业",
+            matched_level2="不在内部表的分类",
+            audit_result="错误",
+            confidence=20,
+            reason="外部证据与当前分类只有部分匹配，建议人工复核",
+            suggestion="渔业 / 不在内部表的分类",
+            needs_review=True,
+        )
+    )
+
+    result = audit_record(record, rules, company, classification_agent=agent)
+
+    assert result.status == "疑似错误"
+    assert result.error_type == "外文证据需语义复核"
+    assert "英文/外文" in result.reason
+    assert "只有部分匹配" not in result.reason
+    assert result.needs_review is True
+
+
 def test_audit_record_ignores_stage_when_scoring_category():
     record = EmployeeRecord(
         row_number=2,

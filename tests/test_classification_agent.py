@@ -93,6 +93,35 @@ def test_classification_agent_prompt_allows_subcategory_to_be_level2_or_level3()
     assert '"matched_level3"' in user_prompt
 
 
+def test_classification_agent_prompt_handles_foreign_language_evidence_semantically():
+    client = CaptureChatClient()
+    agent = ClassificationAgent(client)
+    record = EmployeeRecord(
+        row_number=2,
+        date="7月20日",
+        name="Alex",
+        category="种植业",
+        subcategory="水果作物",
+        company_raw="Example Farm",
+    )
+    company = CompanyInfo(
+        query_name="Example Farm",
+        company_name="Example Farm",
+        business_scope="The company grows apples, pears and citrus fruit in orchard planting bases.",
+        status="",
+        source="website",
+        success=True,
+    )
+
+    agent.classify(record, company, [CategoryRule("农业", "种植业", "水果作物", "类型", ["苹果", "梨", "水果"])])
+    system_prompt = client.messages[0]["content"]
+    user_prompt = client.messages[1]["content"]
+
+    assert "英文、西语等外文" in system_prompt
+    assert "先按语义理解业务含义" in user_prompt
+    assert "不要因为外文证据没有直接出现中文分类关键词" in user_prompt
+
+
 def test_format_category_rules_for_agent_filters_stage_module():
     rules = [
         CategoryRule("农业", "种植业", "谷类作物", "类型", ["水稻", "大米"]),

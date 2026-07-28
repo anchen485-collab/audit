@@ -49,7 +49,7 @@ def candidate_encodings(response) -> list[str]:
 def text_quality_score(text: str) -> int:
     """给解码结果打分：中文越多越好，乱码特征越多越差。"""
     chinese_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
-    mojibake_count = sum(text.count(marker) for marker in mojibake_markers())
+    mojibake_count = sum(text.count(marker) for marker in scoring_mojibake_markers())
     return chinese_count * 2 - mojibake_count * 5
 
 
@@ -58,6 +58,7 @@ def repair_mojibake(text: str) -> str:
     if not looks_mojibake(text):
         return ""
     best_repaired = ""
+    best_text = text
     best_score = text_quality_score(text)
     for source_encoding in ["latin1", "gb18030", "gbk"]:
         try:
@@ -65,27 +66,75 @@ def repair_mojibake(text: str) -> str:
         except UnicodeError:
             repaired = repair_mojibake_by_chunks(text, source_encoding)
         score = text_quality_score(repaired)
-        if score > best_score:
+        if score > best_score or (score == best_score and len(repaired) > len(best_text)):
             best_repaired = repaired
+            best_text = repaired
             best_score = score
     return best_repaired
 
 
 def looks_mojibake(text: str) -> bool:
     """判断文本是否存在常见的中文乱码特征。"""
-    return any(marker in text for marker in mojibake_markers())
+    if not text:
+        return False
+    strong_count = sum(text.count(marker) for marker in strong_mojibake_markers())
+    if strong_count:
+        return True
+    if any(marker in text for marker in ["Ã", "Â"]):
+        return True
+    latin_marker_count = sum(text.count(marker) for marker in latin_mojibake_markers())
+    if latin_marker_count >= 6 and latin_marker_count / max(len(text), 1) >= 0.08:
+        return True
+    gb_latin_marker_count = sum(text.count(marker) for marker in gb18030_latin_mojibake_markers())
+    if gb_latin_marker_count < 2:
+        return False
+    latin_letter_count = sum(1 for char in text if ("A" <= char <= "Z") or ("a" <= char <= "z"))
+    cjk_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    return latin_letter_count > cjk_count * 2
 
 
 def mojibake_markers() -> list[str]:
     """常见乱码标记，覆盖 Latin-1 误解码和 GB18030 误解码两类场景。"""
+    return latin_mojibake_markers() + gb18030_latin_mojibake_markers() + strong_mojibake_markers()
+
+
+def scoring_mojibake_markers() -> list[str]:
+    """用于候选文本评分的乱码标记；不惩罚正常外文重音字母。"""
+    return ["Ã", "Â"] + gb18030_latin_mojibake_markers() + strong_mojibake_markers()
+
+
+def latin_mojibake_markers() -> list[str]:
+    """拉丁误解码标记；正常英文/外文中也可能出现，需按数量和比例判断。"""
     return [
         "Ã",
         "Â",
-        "�",
         "é",
         "å",
         "ç",
         "è",
+    ]
+
+
+def gb18030_latin_mojibake_markers() -> list[str]:
+    """西语等拉丁文本被 GB18030 误解码后常见的中文形似标记。"""
+    return [
+        "贸",
+        "谩",
+        "铆",
+        "煤",
+        "脕",
+        "茅",
+        "帽",
+        "掳",
+        "鈥",
+        "麓",
+    ]
+
+
+def strong_mojibake_markers() -> list[str]:
+    """强乱码标记，通常不会出现在正常英文证据中。"""
+    return [
+        "�",
         "\\x",
         "鍥",
         "绉",

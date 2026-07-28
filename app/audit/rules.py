@@ -212,6 +212,14 @@ def audit_record(
         result.needs_review = False
         return result
 
+    if _looks_latin_language_evidence(business_scope):
+        result.status = "无法判断"
+        result.confidence = current_score
+        result.error_type = "外文证据需语义复核"
+        result.reason = "外部证据文本主要为英文/外文，规则关键词无法充分命中当前中文分类；需要大模型语义判断或人工复核"
+        result.needs_review = True
+        return result
+
     result.status = "疑似错误"
     result.confidence = current_score
     result.error_type = "证据不足"
@@ -236,6 +244,47 @@ def _split_category_values(value: str) -> list[str]:
 def _has_business_keyword_evidence(evidence: list[str]) -> bool:
     """判断当前分类是否有外部经营/官网关键词支持。"""
     return any(item.startswith("经营范围关键词：") for item in evidence)
+
+
+def _looks_latin_language_evidence(text: str) -> bool:
+    """识别以英文/西语等拉丁文字为主的官网证据，避免中文关键词兜底误判。"""
+    if not text:
+        return False
+    latin_letter_count = sum(
+        1
+        for char in text
+        if ("A" <= char <= "Z") or ("a" <= char <= "z") or ("\u00c0" <= char <= "\u024f")
+    )
+    cjk_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    latin_words = re.findall(r"[A-Za-zÀ-ɏ]{3,}", text)
+    return latin_letter_count >= 40 and len(latin_words) >= 6 and latin_letter_count > cjk_count * 4
+
+
+def _is_generic_partial_match_reason(text: str) -> bool:
+    """识别大模型/兜底返回的泛化部分匹配原因。"""
+    return any(
+        phrase in (text or "")
+        for phrase in [
+            "外部证据与当前分类只有部分匹配",
+            "外部证据与当前分类部分匹配",
+            "只有部分匹配，建议人工复核",
+            "部分匹配，建议人工复核",
+        ]
+    )
+
+
+def _rewrite_generic_foreign_language_reason(result: AuditResult) -> None:
+    """外文证据下不要透传“部分匹配”这种无信息量结论。"""
+    if not _looks_latin_language_evidence(result.business_scope):
+        return
+    if not _is_generic_partial_match_reason(result.reason):
+        return
+    result.error_type = "外文证据需语义复核"
+    result.reason = (
+        "大模型语义判断：外部证据文本主要为英文/外文，当前返回结果未给出足够具体的语义匹配依据；"
+        "请结合外文证据语义复核当前分类"
+    )
+    result.needs_review = True
 
 
 # 一级分类名称别名映射（员工惯用简称 → 内部分类表正式名称）
@@ -372,6 +421,7 @@ def _needs_full_category_review(agent_result) -> bool:
         getattr(agent_result, "matched_module", ""),
         " ".join(str(keyword) for keyword in matched_keywords),
     ]
+    text = " ".join(part for part in parts if part)
     if any(word in text for word in FULL_CATEGORY_REVIEW_TRIGGER_WORDS):
         return True
     return bool(
@@ -886,11 +936,11 @@ def _apply_agent_result(
             result.suggestion = _fallback_suggestion_if_changed(result, fallback_key)
             result.reason += "；外部证据显示企业主营肥料/化肥研发生产销售，作物名称更像产品适用对象，未见直接种植业务，不能判为种植业正确"
             result.needs_review = False
-            return result
+            return _finalize_agent_result(result)
         result.status = "正确"
         result.error_type = ""
         result.suggestion = ""
-        return result
+        return _finalize_agent_result(result)
 
     if agent_result.audit_result == "错误":
         result.status = "错误"
@@ -901,10 +951,19 @@ def _apply_agent_result(
             result.error_type = "语义分类需复核"
             result.reason += "；模型返回的建议分类未在内部分类表中精确命中，需要人工复核"
             result.needs_review = True
+        if (
+            not result.suggestion
+            and fallback_key
+            and fallback_score >= 35
+            and _can_apply_fallback_suggestion(result, agent_result)
+        ):
+            result.suggestion = _fallback_suggestion_if_changed(result, fallback_key)
+            if result.suggestion:
+                result.reason += "；模型建议无效，已根据外部证据召回结果补充建议修正"
         if not result.suggestion:
             result.reason += "；agent 未给出有效建议修正，请人工复核"
             result.needs_review = True
-        return result
+        return _finalize_agent_result(result)
 
     if agent_result.audit_result == "无法判断":
         result.status = "无法判断"
@@ -913,7 +972,7 @@ def _apply_agent_result(
         if not result.suggestion:
             _apply_fallback_suggestion(result, fallback_key, fallback_score, agent_result)
         result.needs_review = True
-        return result
+        return _finalize_agent_result(result)
 
     result.status = "疑似错误"
     result.error_type = "语义证据不足"
@@ -921,6 +980,11 @@ def _apply_agent_result(
     if not result.suggestion:
         _apply_fallback_suggestion(result, fallback_key, fallback_score, agent_result)
     result.needs_review = True
+    return _finalize_agent_result(result)
+
+
+def _finalize_agent_result(result: AuditResult) -> AuditResult:
+    _rewrite_generic_foreign_language_reason(result)
     return result
 
 

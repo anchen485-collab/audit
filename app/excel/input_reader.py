@@ -5,7 +5,13 @@ from openpyxl import load_workbook
 from app.core.models import EmployeeRecord
 
 
-REQUIRED_HEADERS = ["日期", "姓名", "一级分类", "细分", "企业名称&官网"]
+REQUIRED_HEADER_ALIASES = {
+    "日期": ["日期"],
+    "姓名": ["姓名"],
+    "一级分类": ["一级分类"],
+    "细分": ["细分", "细项"],
+    "企业名称&官网": ["企业名称&官网"],
+}
 
 
 def cell_text(value) -> str:
@@ -20,8 +26,8 @@ def read_employee_excel(path: str | Path) -> list[EmployeeRecord]:
     wb = load_workbook(path, data_only=True)
     ws = wb.active
     header_row = [cell_text(cell.value) for cell in ws[1]]
-    header_index = {name: header_row.index(name) for name in REQUIRED_HEADERS if name in header_row}
-    missing_headers = [name for name in REQUIRED_HEADERS if name not in header_index]
+    header_index = _resolve_header_index(header_row)
+    missing_headers = ["/".join(aliases) for name, aliases in REQUIRED_HEADER_ALIASES.items() if name not in header_index]
     if missing_headers:
         raise ValueError(f"员工录入表缺少表头：{', '.join(missing_headers)}")
 
@@ -47,3 +53,13 @@ def read_employee_excel(path: str | Path) -> list[EmployeeRecord]:
             )
         )
     return records
+
+
+def _resolve_header_index(header_row: list[str]) -> dict[str, int]:
+    header_index: dict[str, int] = {}
+    for standard_name, aliases in REQUIRED_HEADER_ALIASES.items():
+        for alias in aliases:
+            if alias in header_row:
+                header_index[standard_name] = header_row.index(alias)
+                break
+    return header_index

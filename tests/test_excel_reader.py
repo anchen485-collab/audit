@@ -55,3 +55,33 @@ def test_read_employee_excel_allows_missing_stage_header(tmp_path):
 
     assert len(records) == 1
     assert records[0].stage == ""
+
+
+def test_read_employee_excel_accepts_xixiang_header_alias(tmp_path):
+    file_path = tmp_path / "employee_with_xixiang.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["日期", "姓名", "一级分类", "细项", "企业名称&官网"])
+    ws.append(["7月21日", "张冰冰", "种植业", "水果作物", "金川县雪梨果业开发有限责任公司"])
+    wb.save(file_path)
+
+    records = read_employee_excel(file_path)
+
+    assert len(records) == 1
+    assert records[0].subcategory == "水果作物"
+
+
+def test_read_employee_excel_missing_subcategory_header_mentions_aliases(tmp_path):
+    file_path = tmp_path / "employee_missing_subcategory.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["日期", "姓名", "一级分类", "企业名称&官网"])
+    ws.append(["7月21日", "张冰冰", "种植业", "金川县雪梨果业开发有限责任公司"])
+    wb.save(file_path)
+
+    try:
+        read_employee_excel(file_path)
+    except ValueError as exc:
+        assert "细分/细项" in str(exc)
+    else:
+        raise AssertionError("expected missing header error")
