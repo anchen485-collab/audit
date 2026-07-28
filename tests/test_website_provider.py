@@ -1,5 +1,5 @@
-from app.company.website_crawler import WebsiteCrawlResult
-from app.company.website_provider import WebsiteCompanyInfoProvider
+from app.companies.crawlers.website import WebsiteCrawlResult
+from app.companies.providers.website import WebsiteCompanyInfoProvider
 from app.core.models import EmployeeRecord
 
 

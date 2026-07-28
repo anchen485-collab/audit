@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
-from app.main import app
+from app.api.main import app
 
 
 def build_employee_file(path: Path):

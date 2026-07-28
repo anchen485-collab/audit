@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 import re
@@ -435,3 +435,4 @@ class WebsiteTextCleaner:
         if len(text) <= self.max_length:
             return text
         return text[: self.max_length].rsplit(" ", 1)[0].strip() or text[: self.max_length]
+

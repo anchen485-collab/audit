@@ -1,12 +1,12 @@
-import os
+﻿import os
 import logging
 from pathlib import Path
 
-from app.company.mock_provider import MockCompanyInfoProvider
-from app.company.provider import CompanyInfoProvider
-from app.company.qichacha_provider import QichachaCompanyInfoProvider
-from app.company.website_crawler import Crawl4AIWebsiteCrawler, HybridWebsiteCrawler, WebsiteCrawler
-from app.company.website_provider import WebsiteCompanyInfoProvider
+from app.companies.providers.mock import MockCompanyInfoProvider
+from app.companies.providers.base import CompanyInfoProvider
+from app.companies.providers.qichacha import QichachaCompanyInfoProvider
+from app.companies.crawlers.website import Crawl4AIWebsiteCrawler, HybridWebsiteCrawler, WebsiteCrawler
+from app.companies.providers.website import WebsiteCompanyInfoProvider
 from app.core.config import ensure_storage_dirs, load_env_file
 
 
@@ -52,3 +52,4 @@ def _build_website_crawler():
     if engine != "requests":
         logger.warning("company_provider_unknown_crawler_engine 未知官网爬虫引擎 engine=%s，回退 requests", engine)
     return WebsiteCrawler(max_pages=max_pages, max_depth=max_depth, timeout=timeout)
+

@@ -1,4 +1,4 @@
-from app.company.website_crawler import HybridWebsiteCrawler, WebsiteCrawlResult
+from app.companies.crawlers.website import HybridWebsiteCrawler, WebsiteCrawlResult
 
 
 class FakeCrawler:

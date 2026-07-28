@@ -1,4 +1,4 @@
-from app.company.provider import CompanyInfoProvider
+﻿from app.companies.providers.base import CompanyInfoProvider
 from app.core.models import CompanyInfo
 
 
@@ -41,3 +41,4 @@ class MockCompanyInfoProvider(CompanyInfoProvider):
             success=True,
             raw=item,
         )
+

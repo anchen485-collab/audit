@@ -1,6 +1,6 @@
 import hashlib
 
-from app.company.qichacha_provider import QichachaCompanyInfoProvider
+from app.companies.providers.qichacha import QichachaCompanyInfoProvider
 
 
 class FakeResponse:

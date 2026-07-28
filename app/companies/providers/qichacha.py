@@ -1,11 +1,11 @@
-import hashlib
+﻿import hashlib
 import os
 import time
 from typing import Callable
 
 import requests
 
-from app.company.provider import CompanyInfoProvider
+from app.companies.providers.base import CompanyInfoProvider
 from app.core.config import load_env_file
 from app.core.models import CompanyInfo
 
@@ -113,3 +113,4 @@ class QichachaCompanyInfoProvider(CompanyInfoProvider):
             if value is not None and str(value).strip():
                 return str(value).strip()
         return ""
+

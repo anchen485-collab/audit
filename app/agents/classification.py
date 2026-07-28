@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 import json
@@ -288,3 +288,5 @@ def _clamp_confidence(value) -> int:
     except (TypeError, ValueError):
         return 0
     return max(0, min(number, 100))
+
+

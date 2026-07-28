@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from app.excel.input_reader import read_employee_excel
+from app.documents.excel.input_reader import read_employee_excel
 
 
 def build_employee_file(path: Path):

@@ -6,15 +6,15 @@ from pathlib import Path
 from threading import Lock
 from time import perf_counter
 
-from app.agent import build_classification_agent_from_env
+from app.agents import build_classification_agent_from_env
 from app.audit.rules import audit_record, clean_company_name
 from app.audit.summary import build_person_summary
-from app.category.rule_index import load_category_rules_from_config
-from app.company.provider import CompanyInfoProvider
+from app.categories.rule_index import load_category_rules_from_config
+from app.companies.providers.base import CompanyInfoProvider
 from app.core.models import AuditGraphState
 from app.core.trace import elapsed_ms
-from app.excel.input_reader import read_employee_excel
-from app.excel.result_writer import write_audit_result_excel
+from app.documents.excel.input_reader import read_employee_excel
+from app.documents.excel.result_writer import write_audit_result_excel
 
 
 logger = logging.getLogger(__name__)

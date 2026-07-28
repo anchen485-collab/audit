@@ -1,12 +1,12 @@
-import logging
+﻿import logging
 from pathlib import Path
 from time import perf_counter
 
-from app.DataCleaning import WebsiteTextCleaner
-from app.company.cache import CompanyInfoCache
-from app.company.provider import CompanyInfoProvider
-from app.company.text_repair import looks_mojibake, repair_compacted_text
-from app.company.website_crawler import WebsiteCrawler
+from app.preprocessing import WebsiteTextCleaner
+from app.companies.cache import CompanyInfoCache
+from app.companies.providers.base import CompanyInfoProvider
+from app.companies.text_repair import looks_mojibake, repair_compacted_text
+from app.companies.crawlers.website import WebsiteCrawler
 from app.core.models import CompanyInfo, EmployeeRecord
 from app.core.trace import elapsed_ms
 
@@ -227,3 +227,4 @@ class WebsiteCompanyInfoProvider(CompanyInfoProvider):
             "mode": cleaned.mode,
             "fallback_to_raw_text": fallback_to_raw_text,
         }
+

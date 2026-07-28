@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 from pathlib import Path
 
@@ -46,3 +46,4 @@ class CompanyInfoCache:
     def set(self, company_name: str, info: CompanyInfo):
         self._data[company_name] = info.__dict__
         self.cache_path.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
+

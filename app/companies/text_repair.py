@@ -1,4 +1,4 @@
-import re
+﻿import re
 
 
 def decode_response_text(response) -> str:
@@ -203,3 +203,4 @@ def repair_mojibake_by_chunks(text: str, source_encoding: str) -> str:
         current.append(char)
     flush_current()
     return "".join(repaired_parts)
+

@@ -14,8 +14,8 @@ from app.audit.nodes import (
     read_category_node,
     read_employee_node,
 )
-from app.company.mock_provider import MockCompanyInfoProvider
-from app.company.provider import CompanyInfoProvider
+from app.companies.providers.mock import MockCompanyInfoProvider
+from app.companies.providers.base import CompanyInfoProvider
 from app.core.models import AuditGraphState
 from app.core.trace import elapsed_ms, record_trace_stage
 

@@ -1,4 +1,4 @@
-from app.company.cache import CompanyInfoCache
+from app.companies.cache import CompanyInfoCache
 from app.core.models import CompanyInfo
 
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.config import get_category_rules_excel_path, get_category_rules_json_path
 from app.core.models import CategoryRule
-from app.excel.category_reader import read_category_rules
+from app.documents.excel.category_reader import read_category_rules
 
 
 LOW_WEIGHT_MODULES = {"环节", "生态", "全生态"}
@@ -142,3 +142,4 @@ def _append_to_keyword_index(keyword_index: dict[str, list[dict[str, Any]]], rul
                 "weight": weight,
             }
         )
+

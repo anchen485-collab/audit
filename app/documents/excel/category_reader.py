@@ -1,10 +1,10 @@
-from pathlib import Path
+﻿from pathlib import Path
 import re
 
 from openpyxl import load_workbook
 
 from app.core.models import CategoryRule
-from app.excel.input_reader import cell_text
+from app.documents.excel.input_reader import cell_text
 
 
 REQUIRED_HEADERS = ["一级品类", "二级品类", "三级品类", "模块名称", "子模块列表"]
@@ -60,3 +60,4 @@ def read_category_rules(path: str | Path) -> list[CategoryRule]:
             )
         )
     return rules
+

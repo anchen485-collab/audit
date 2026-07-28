@@ -3,8 +3,8 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from app.audit.graph import run_audit_workflow
-from app.company.mock_provider import MockCompanyInfoProvider
-from app.company.website_crawler import WebsiteCrawler
+from app.companies.providers.mock import MockCompanyInfoProvider
+from app.companies.crawlers.website import WebsiteCrawler
 
 
 class FakeResponse:

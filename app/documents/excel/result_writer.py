@@ -1,10 +1,10 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 from app.audit.summary import build_person_summary
-from app.company.text_repair import looks_mojibake, repair_compacted_text
+from app.companies.text_repair import looks_mojibake, repair_compacted_text
 from app.core.models import AuditResult
 
 
@@ -109,3 +109,4 @@ def _external_evidence_for_display(text: str) -> str:
     if looks_mojibake(repaired):
         return "外部证据文本编码异常，已隐藏乱码；请清理官网缓存后重新审计"
     return repaired
+

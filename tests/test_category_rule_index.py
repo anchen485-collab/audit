@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from app.category.rule_index import (
+from app.categories.rule_index import (
     build_category_rule_json,
     load_category_rule_index,
     load_category_rules_from_config,

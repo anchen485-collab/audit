@@ -1,5 +1,5 @@
 from app.audit.rules import _level1_level2_suggestion, audit_record, clean_company_name
-from app.agent.classification_agent import AgentClassificationResult
+from app.agents.classification import AgentClassificationResult
 from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
 
 

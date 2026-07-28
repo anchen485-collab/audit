@@ -1,7 +1,7 @@
 from openpyxl import load_workbook
 
 from app.core.models import AuditResult
-from app.excel.result_writer import write_audit_result_excel
+from app.documents.excel.result_writer import write_audit_result_excel
 
 
 def test_result_writer_repairs_mojibake_external_evidence_text(tmp_path):

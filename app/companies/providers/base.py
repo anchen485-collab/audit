@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+﻿from abc import ABC, abstractmethod
 
 from app.core.models import CompanyInfo, EmployeeRecord
 
@@ -13,3 +13,4 @@ class CompanyInfoProvider(ABC):
     def get_company_info_for_record(self, record: EmployeeRecord) -> CompanyInfo:
         """默认按企业名称查询；官网 Provider 可覆写后读取整条记录。"""
         return self.get_company_info(record.company_name or record.company_raw)
+

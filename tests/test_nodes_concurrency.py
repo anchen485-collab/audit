@@ -1,7 +1,7 @@
 import threading
 import time
 
-from app.agent.classification_agent import AgentClassificationResult
+from app.agents.classification import AgentClassificationResult
 from app.audit.nodes import audit_records_node, query_company_info_node
 from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
 

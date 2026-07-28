@@ -1,8 +1,8 @@
-from app.company.factory import get_company_provider
-from app.company.mock_provider import MockCompanyInfoProvider
-from app.company.qichacha_provider import QichachaCompanyInfoProvider
-from app.company.website_crawler import HybridWebsiteCrawler, WebsiteCrawler
-from app.company.website_provider import WebsiteCompanyInfoProvider
+from app.companies.providers.factory import get_company_provider
+from app.companies.providers.mock import MockCompanyInfoProvider
+from app.companies.providers.qichacha import QichachaCompanyInfoProvider
+from app.companies.crawlers.website import HybridWebsiteCrawler, WebsiteCrawler
+from app.companies.providers.website import WebsiteCompanyInfoProvider
 
 
 def test_get_company_provider_can_switch_to_mock(monkeypatch):

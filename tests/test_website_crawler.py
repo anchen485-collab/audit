@@ -1,4 +1,4 @@
-from app.company.website_crawler import WebsiteCrawler
+from app.companies.crawlers.website import WebsiteCrawler
 
 
 class FakeResponse:

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from collections import deque
@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import requests
 
-from app.company.text_repair import (
+from app.companies.text_repair import (
     candidate_encodings,
     compact_text,
     decode_response_text,
@@ -682,3 +682,4 @@ class HybridWebsiteCrawler:
             if url and url not in merged:
                 merged.append(url)
         return merged
+

@@ -3,42 +3,29 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.audit.graph import run_audit_workflow
-from app.company.factory import get_company_provider
+from app.companies.providers.factory import get_company_provider
 from app.core.config import ensure_storage_dirs
-from app.core.logging_config import configure_logging
 from app.core.trace import elapsed_ms
 
 
-BASE_DIR = Path(__file__).resolve().parent
-configure_logging()
+BASE_DIR = Path(__file__).resolve().parents[1]
 logger = logging.getLogger(__name__)
-app = FastAPI(title="企业录入审计 Agent", version="1.0.0")
+router = APIRouter()
 templates = Jinja2Templates(directory=str(BASE_DIR / "web" / "templates"))
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "web" / "static")), name="static")
 
 
-@app.get("/health")
-def health():
-    """健康检查接口。"""
-    return {
-        "status": "ok",
-        "upload_category_file_required": False,
-    }
-
-
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 def index(request: Request):
     """审计 Agent 首页，提供 Excel 上传入口。"""
     return templates.TemplateResponse(request, "index.html")
 
 
-@app.post("/audit/upload", response_class=HTMLResponse)
+@router.post("/audit/upload", response_class=HTMLResponse)
 async def upload_audit_files(
     request: Request,
     employee_file: UploadFile = File(...),
@@ -107,7 +94,7 @@ async def upload_audit_files(
     )
 
 
-@app.get("/audit/download/{job_id}")
+@router.get("/audit/download/{job_id}")
 def download_result(job_id: str):
     """通过 job_id 下载审计结果，避免暴露服务器真实路径。"""
     if "/" in job_id or "\\" in job_id or ".." in job_id:

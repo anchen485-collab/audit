@@ -3,7 +3,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 
 from app.audit.graph import run_audit_workflow
-from app.company.mock_provider import MockCompanyInfoProvider
+from app.companies.providers.mock import MockCompanyInfoProvider
 
 
 def build_employee_file(path: Path):

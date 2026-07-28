@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from openpyxl import load_workbook
 
@@ -63,3 +63,4 @@ def _resolve_header_index(header_row: list[str]) -> dict[str, int]:
                 header_index[standard_name] = header_row.index(alias)
                 break
     return header_index
+

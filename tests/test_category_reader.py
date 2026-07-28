@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from app.excel.category_reader import read_category_rules
+from app.documents.excel.category_reader import read_category_rules
 
 
 def build_category_file(path: Path):

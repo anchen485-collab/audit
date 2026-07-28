@@ -1,4 +1,4 @@
-from app.agent.classification_agent import ClassificationAgent, format_category_rules_for_agent, parse_agent_result
+from app.agents.classification import ClassificationAgent, format_category_rules_for_agent, parse_agent_result
 from app.core.models import CategoryRule, CompanyInfo, EmployeeRecord
 
 

@@ -1,4 +1,4 @@
-from app.DataCleaning import WebsiteTextCleaner
+from app.preprocessing import WebsiteTextCleaner
 
 
 def test_website_text_cleaner_keeps_business_evidence_and_drops_boilerplate():

@@ -149,7 +149,7 @@ WEBSITE_CRAWL_TIMEOUT=8
 ## 启动服务
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.api.main:app --reload
 ```
 
 启动后打开：
@@ -194,13 +194,13 @@ http://127.0.0.1:8000/health
 当前真实 API 还没申请完成，所以系统使用：
 
 ```text
-app/company/mock_provider.py
+app/companies/providers/mock.py
 ```
 
 后续拿到企查查官方 API 后，只需要补充：
 
 ```text
-app/company/qichacha_provider.py
+app/companies/providers/qichacha.py
 ```
 
 建议把 API Key 放到环境变量，不要写死在代码里：
@@ -219,16 +219,19 @@ python -m pytest
 ## 目录说明
 
 ```text
-app/main.py                    FastAPI 入口
-app/audit/graph.py             LangGraph 审计流程
-app/audit/rules.py             规则审计逻辑
-app/category/rule_index.py     分类表 JSON 规则索引生成和加载
-app/excel/input_reader.py      员工录入表读取
-app/excel/category_reader.py   内部分类表读取
-app/excel/result_writer.py     审计结果导出
-app/company/mock_provider.py   mock 企业信息查询
-app/company/qichacha_provider.py 企查查 API 预留实现
-storage/uploads                上传文件目录
-storage/outputs                输出结果目录
-storage/category_rules.json    本地生成的分类规则索引，不提交 GitHub
+app/api/main.py                         FastAPI 入口、上传和下载接口
+app/api/web                             页面模板和静态资源
+app/audit                               LangGraph 流程、审计规则、评分和汇总
+app/agents                              大模型分类 Agent
+app/categories/rule_index.py            分类表 JSON 规则索引生成和加载
+app/companies/providers                 企业信息来源，包含 mock、企查查和官网 provider
+app/companies/crawlers                  官网爬虫实现
+app/companies/cache.py                  官网信息缓存
+app/companies/text_repair.py            官网文本乱码修复
+app/documents/excel                     员工表读取、分类表读取和审计结果导出
+app/preprocessing                       官网证据文本清洗
+app/core                                配置、日志、模型和 trace 工具
+storage/uploads                         上传文件目录
+storage/outputs                         输出结果目录
+storage/category_rules.json             本地生成的分类规则索引，不提交 GitHub
 ```
