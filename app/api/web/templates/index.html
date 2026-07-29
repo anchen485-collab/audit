@@ -3,26 +3,100 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>企业录入审计 Agent</title>
+    <title>审计工作台</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <main class="shell">
-      <section class="panel">
-        <div class="masthead">
-          <p class="eyebrow">Version 1.0</p>
-          <h1>企业录入审计 Agent</h1>
-          <p>上传员工录入表，系统会使用服务端固定分类规则完成审计并导出 Excel 结果。</p>
+      <section class="topbar" aria-label="审计工作台">
+        <div>
+          <p class="eyebrow">Audit Agent</p>
+          <h1>审计工作台</h1>
         </div>
+        <a class="ghost-link" href="/docs" target="_blank" rel="noreferrer">API 文档</a>
+      </section>
 
-        <form class="upload-form" action="/audit/upload" method="post" enctype="multipart/form-data">
-          <label>
-            <span>员工录入 Excel</span>
-            <input type="file" name="employee_file" accept=".xlsx" required />
+      <section class="upload-panel">
+        <form id="uploadForm" class="upload-form" action="/audit/upload" method="post" enctype="multipart/form-data">
+          <label class="file-picker" for="excelFile">
+            <span class="file-title">选择员工录入 Excel</span>
+            <span id="fileName" class="file-name">仅支持 .xlsx</span>
+            <input id="excelFile" name="employee_file" type="file" accept=".xlsx" required />
           </label>
-          <button type="submit">开始审计</button>
+          <button id="submitButton" type="submit">开始审计</button>
         </form>
+        <div id="statusMessage" class="status-message" role="status">等待上传</div>
+      </section>
+
+      <section id="metrics" class="metrics" aria-label="审计指标"></section>
+
+      <section class="table-section">
+        <div class="section-head">
+          <h2>审计明细</h2>
+          <div class="table-actions">
+            <select id="actionFilter" aria-label="审计动作筛选">
+              <option value="">全部动作</option>
+              <option value="approved">自动通过</option>
+              <option value="rejected">自动驳回</option>
+              <option value="needs_more_evidence">证据不足</option>
+              <option value="needs_human_review">人工复核</option>
+            </select>
+            <a id="downloadLink" class="download-link is-hidden" href="#">下载 Excel</a>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>录入人员</th>
+                <th>公司名称</th>
+                <th>公司官网</th>
+                <th>一级分类</th>
+                <th>二级分类</th>
+                <th>细分</th>
+                <th>审计动作</th>
+                <th>置信度</th>
+                <th>风险分</th>
+                <th>人工复核</th>
+                <th>审计原因</th>
+                <th>处理建议</th>
+              </tr>
+            </thead>
+            <tbody id="resultRows">
+              <tr>
+                <td colspan="12" class="empty-cell">暂无审计结果</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="table-section">
+        <div class="section-head">
+          <h2>人工复核任务</h2>
+          <span id="reviewCount" class="subtle-count">0 条</span>
+        </div>
+        <div class="table-wrap compact">
+          <table>
+            <thead>
+              <tr>
+                <th>任务 ID</th>
+                <th>审计单 ID</th>
+                <th>优先级</th>
+                <th>原因</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="reviewRows">
+              <tr>
+                <td colspan="5" class="empty-cell">暂无人工复核任务</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
+
+    <script src="/static/app.js"></script>
   </body>
 </html>

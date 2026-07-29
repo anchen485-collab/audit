@@ -7,14 +7,18 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="panel">
-        <div class="masthead">
+    <main class="shell result-shell">
+      <section class="topbar" aria-label="审计异常">
+        <div>
           <p class="eyebrow">Error {{ status_code }}</p>
           <h1>{{ title }}</h1>
-          <p>{{ message }}</p>
         </div>
-        <a class="download" href="/">返回重新上传</a>
+        <a class="ghost-link" href="/">返回工作台</a>
+      </section>
+
+      <section class="upload-panel result-panel">
+        <p class="error">{{ message }}</p>
+        <a class="download-link" href="/">重新上传</a>
       </section>
     </main>
   </body>
