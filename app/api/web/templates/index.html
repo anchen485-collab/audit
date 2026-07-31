@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>审计工作台</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=detail-table-20260731" />
   </head>
   <body>
     <main class="shell">
@@ -45,14 +45,26 @@
           </div>
         </div>
         <div class="table-wrap">
-          <table>
+          <table class="audit-detail-table">
+            <colgroup>
+              <col class="col-person" />
+              <col class="col-company" />
+              <col class="col-website" />
+              <col class="col-level1" />
+              <col class="col-subcategory" />
+              <col class="col-action" />
+              <col class="col-confidence" />
+              <col class="col-risk" />
+              <col class="col-review" />
+              <col class="col-reason" />
+              <col class="col-suggestion" />
+            </colgroup>
             <thead>
               <tr>
                 <th>录入人员</th>
                 <th>公司名称</th>
                 <th>公司官网</th>
                 <th>一级分类</th>
-                <th>二级分类</th>
                 <th>细分</th>
                 <th>审计动作</th>
                 <th>置信度</th>
@@ -64,7 +76,7 @@
             </thead>
             <tbody id="resultRows">
               <tr>
-                <td colspan="12" class="empty-cell">暂无审计结果</td>
+                <td colspan="11" class="empty-cell">暂无审计结果</td>
               </tr>
             </tbody>
           </table>
@@ -77,7 +89,7 @@
           <span id="reviewCount" class="subtle-count">0 条</span>
         </div>
         <div class="table-wrap compact">
-          <table>
+          <table class="review-task-table">
             <thead>
               <tr>
                 <th>任务 ID</th>
@@ -97,6 +109,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=detail-table-20260731"></script>
   </body>
 </html>

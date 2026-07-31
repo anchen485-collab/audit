@@ -4,6 +4,19 @@ from app.api.main import app
 from tests.test_api_upload import build_category_file, build_employee_file
 
 
+def test_frontend_detail_table_removes_level2_column():
+    """审计明细里只展示一级分类和细分，不再单独展示二级分类。"""
+    client = TestClient(app)
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "审计明细" in response.text
+    assert "二级分类" not in response.text
+    assert 'colspan="11"' in response.text
+    assert "/static/app.js?v=detail-table-20260731" in response.text
+    assert "/static/styles.css?v=detail-table-20260731" in response.text
+
+
 def test_frontend_api_upload_returns_json_payload(tmp_path, monkeypatch):
     """验证单页前端使用的 JSON 上传接口可以返回审计结果和下载链接。"""
     monkeypatch.setenv("AUDIT_STORAGE_DIR", str(tmp_path / "storage"))

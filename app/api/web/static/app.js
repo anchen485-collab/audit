@@ -10,6 +10,7 @@ const reviewCount = document.querySelector("#reviewCount");
 const actionFilter = document.querySelector("#actionFilter");
 const downloadLink = document.querySelector("#downloadLink");
 
+const DETAIL_COLUMN_COUNT = 11;
 let latestRows = [];
 
 const actionText = {
@@ -61,7 +62,7 @@ uploadForm.addEventListener("submit", async (event) => {
     setStatus(`批次 ${data.batch_id} 已完成`, false);
   } catch (error) {
     setStatus(error.message, true);
-    renderEmpty(resultRows, 12, "暂无审计结果");
+    renderEmpty(resultRows, DETAIL_COLUMN_COUNT, "暂无审计结果");
     renderEmpty(reviewRows, 5, "暂无人工复核任务");
   } finally {
     submitButton.disabled = false;
@@ -106,7 +107,7 @@ function renderDecisionRows(rows) {
   const visibleRows = selectedAction ? rows.filter((row) => row.action === selectedAction) : rows;
 
   if (!visibleRows.length) {
-    renderEmpty(resultRows, 12, "暂无审计结果");
+    renderEmpty(resultRows, DETAIL_COLUMN_COUNT, "暂无审计结果");
     return;
   }
 
@@ -114,18 +115,17 @@ function renderDecisionRows(rows) {
     .map(
       (row) => `
         <tr>
-          <td>${escapeHtml(row.employee_name || "")}</td>
-          <td>${escapeHtml(row.company_name || "")}</td>
-          <td>${renderWebsite(row.website_url)}</td>
-          <td>${escapeHtml(row.entered_level1 || "")}</td>
-          <td>${escapeHtml(row.entered_level2 || "")}</td>
-          <td>${escapeHtml(row.entered_subcategory || "")}</td>
-          <td><span class="badge ${escapeHtml(row.action || "")}">${escapeHtml(actionText[row.action] || row.action || "")}</span></td>
-          <td>${escapeHtml(String(row.confidence ?? ""))}</td>
-          <td>${escapeHtml(String(row.risk_score ?? ""))}</td>
-          <td>${row.needs_review ? "是" : "否"}</td>
-          <td>${escapeHtml(row.reason || "")}</td>
-          <td>${escapeHtml(row.suggestion || "")}</td>
+          <td>${cellText(row.employee_name)}</td>
+          <td>${cellText(row.company_name)}</td>
+          <td>${cellHtml(renderWebsite(row.website_url))}</td>
+          <td>${cellText(row.entered_level1)}</td>
+          <td>${cellText(row.entered_subcategory)}</td>
+          <td>${cellHtml(`<span class="badge ${escapeHtml(row.action || "")}">${escapeHtml(actionText[row.action] || row.action || "")}</span>`)}</td>
+          <td>${cellText(row.confidence ?? "")}</td>
+          <td>${cellText(row.risk_score ?? "")}</td>
+          <td>${cellText(row.needs_review ? "是" : "否")}</td>
+          <td>${cellText(row.reason, "reason-cell")}</td>
+          <td>${cellText(row.suggestion, "suggestion-cell")}</td>
         </tr>
       `,
     )
@@ -147,7 +147,7 @@ function renderReviewRows(tasks) {
           <td>${escapeHtml(task.task_id || "")}</td>
           <td>${escapeHtml(task.case_id || "")}</td>
           <td>${escapeHtml(task.priority || "")}</td>
-          <td>${escapeHtml(task.reason || "")}</td>
+          <td>${cellText(task.reason, "review-reason-cell")}</td>
           <td>${escapeHtml(task.status || "")}</td>
         </tr>
       `,
@@ -168,7 +168,7 @@ function updateDownloadLink(downloadUrl) {
 function clearTables() {
   metricsPanel.innerHTML = "";
   latestRows = [];
-  renderEmpty(resultRows, 12, "审计处理中");
+  renderEmpty(resultRows, DETAIL_COLUMN_COUNT, "审计处理中");
   renderEmpty(reviewRows, 5, "审计处理中");
   reviewCount.textContent = "0 条";
   downloadLink.classList.add("is-hidden");
@@ -185,6 +185,15 @@ function renderWebsite(value) {
 
   const safeValue = escapeHtml(value);
   return `<a href="${safeValue}" target="_blank" rel="noreferrer">${safeValue}</a>`;
+}
+
+function cellText(value, extraClass = "") {
+  return cellHtml(escapeHtml(value ?? ""), extraClass);
+}
+
+function cellHtml(innerHtml, extraClass = "") {
+  const className = extraClass ? `cell-content ${extraClass}` : "cell-content";
+  return `<div class="${className}">${innerHtml}</div>`;
 }
 
 function formatRate(value) {

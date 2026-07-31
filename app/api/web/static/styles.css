@@ -246,8 +246,62 @@ table {
   table-layout: fixed;
 }
 
+.audit-detail-table {
+  min-width: 1500px;
+}
+
+.audit-detail-table .col-person {
+  width: 110px;
+}
+
+.audit-detail-table .col-company {
+  width: 150px;
+}
+
+.audit-detail-table .col-website {
+  width: 180px;
+}
+
+.audit-detail-table .col-level1 {
+  width: 110px;
+}
+
+.audit-detail-table .col-subcategory {
+  width: 150px;
+}
+
+.audit-detail-table .col-action {
+  width: 120px;
+}
+
+.audit-detail-table .col-confidence,
+.audit-detail-table .col-risk {
+  width: 90px;
+}
+
+.audit-detail-table .col-review {
+  width: 110px;
+}
+
+.audit-detail-table .col-reason {
+  width: 400px;
+}
+
+.audit-detail-table .col-suggestion {
+  width: 240px;
+}
+
 .compact table {
   min-width: 840px;
+}
+
+.review-task-table tbody tr {
+  height: 96px;
+}
+
+.review-task-table td {
+  height: 96px;
+  padding: 8px 10px;
 }
 
 th,
@@ -268,6 +322,40 @@ th {
 td {
   background: rgba(255, 253, 248, 0.72);
   overflow-wrap: anywhere;
+}
+
+.audit-detail-table tbody tr {
+  height: 112px;
+}
+
+.audit-detail-table td {
+  height: 112px;
+  padding: 8px 10px;
+}
+
+.cell-content {
+  max-height: 92px;
+  overflow-y: auto;
+  padding-right: 4px;
+  line-height: 1.35;
+  scrollbar-width: thin;
+}
+
+.reason-cell {
+  max-height: 96px;
+}
+
+.review-reason-cell {
+  max-height: 76px;
+}
+
+.cell-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cell-content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c9bdad;
 }
 
 tbody tr:hover td {
